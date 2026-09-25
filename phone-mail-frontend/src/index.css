@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* ── Base ─────────────────────────────────────────────── */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f3f6fb;
+  color: #0f172a;
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+:focus-visible {
+  outline: 2px solid #1a66ff;
+  outline-offset: 2px;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Surfaces ─────────────────────────────────────────── */
+/* Faint dotted "paper" behind chats, like a messaging wallpaper */
+.chat-wallpaper {
+  background-color: #edf1fa;
+  background-image: radial-gradient(rgba(26, 102, 255, 0.08) 1.2px, transparent 1.2px);
+  background-size: 18px 18px;
+}
+
+/* ── Motion (only used where it answers a user action, or once on the auth hero) ── */
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes sheet-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(3px); }
+  30%, 50%, 70% { transform: translateX(-5px); }
+  40%, 60% { transform: translateX(5px); }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+@keyframes caret {
+  50% { opacity: 0; }
+}
+
+.anim-pop   { animation: pop-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-sheet { animation: sheet-up 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-shake { animation: shake 0.45s both; }
+.anim-caret { animation: caret 1s steps(1) infinite; }
+
+.menu-action {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+}
+.menu-action:hover { background: #f1f5f9; }
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #e6edf9;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
