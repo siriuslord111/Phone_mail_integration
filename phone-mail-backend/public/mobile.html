@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhoneMail Mobile</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="mobile-body">
+    <div class="phone-shell">
+      <section id="onboarding" class="onboarding">
+        <div class="onboarding-progress"><span id="onboarding-progress-bar"></span></div>
+        <div class="onboarding-step active" data-step="language">
+          <div class="onboarding-icon">P</div>
+          <h1>Welcome to PhoneMail</h1>
+          <p>Choose your preferred language to get started.</p>
+          <select id="language-select" class="onboarding-input">
+            <option value="en">English</option>
+            <option value="hi">Hindi</option>
+            <option value="es">Spanish</option>
+          </select>
+          <button class="primary onboarding-next" type="button">Continue</button>
+        </div>
+        <div class="onboarding-step" data-step="terms">
+          <div class="onboarding-icon">✓</div>
+          <h1>Terms &amp; Conditions</h1>
+          <p>PhoneMail keeps your conversations organized by phone-based email IDs.</p>
+          <label class="terms-check"><input id="terms-check" type="checkbox" /> I agree to the Terms of Service</label>
+          <button class="primary onboarding-next" type="button">Accept &amp; continue</button>
+        </div>
+        <div class="onboarding-step" data-step="phone">
+          <div class="onboarding-icon">☎</div>
+          <h1>Verify your phone</h1>
+          <p>Your number is pre-filled from this device. You can edit it if needed.</p>
+          <input id="mobile-phone" class="onboarding-input" type="tel" value="9876543210" autocomplete="tel" />
+          <button class="primary onboarding-next" type="button">Send OTP</button>
+        </div>
+        <div class="onboarding-step" data-step="otp">
+          <div class="onboarding-icon">🔒</div>
+          <h1>Enter your OTP</h1>
+          <p>PhoneMail will detect the SMS automatically when device permissions allow it.</p>
+          <input id="mobile-otp" class="onboarding-input" type="text" inputmode="numeric" placeholder="6-digit OTP" autocomplete="one-time-code" />
+          <button class="primary" id="mobile-verify" type="button">Verify and open inbox</button>
+          <button class="text-button" id="mobile-password-mode" type="button">Use password instead</button>
+        </div>
+        <div id="mobile-onboarding-message" class="message-banner"></div>
+      </section>
+
+      <section id="mobile-home" class="mobile-home" hidden>
+      <header class="mobile-header">
+        <div class="menu-button">☰</div>
+        <div class="header-title">PhoneMail</div>
+        <div class="header-profile">A</div>
+      </header>
+
+      <div class="search-bar">
+        <span>⌕</span>
+        <input type="search" placeholder="Search by phone number" />
+      </div>
+
+      <div class="chip-row">
+        <button class="chip active">All</button>
+        <button class="chip">Unread</button>
+        <button class="chip">Attachments</button>
+        <button class="chip">Favorites</button>
+      </div>
+
+      <section class="chat-list">
+        <article class="chat-item active">
+          <div class="avatar">P</div>
+          <div class="chat-body">
+            <div class="chat-meta"><strong>+91 98765 43210</strong><span>now</span></div>
+            <div class="chat-preview">Project plan approved. Please review details.</div>
+          </div>
+        </article>
+        <article class="chat-item">
+          <div class="avatar alt">N</div>
+          <div class="chat-body">
+            <div class="chat-meta"><strong>+1 512 111 1111</strong><span>12:30</span></div>
+            <div class="chat-preview">Subject: Delivery confirmation</div>
+          </div>
+        </article>
+      </section>
+
+      <div class="composer-bar">
+        <button class="fab">✎</button>
+      </div>
+      </section>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

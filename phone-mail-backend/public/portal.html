@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhoneMail Portal</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="portal-body">
+    <div class="portal-card">
+      <div class="brand-row">
+        <div class="brand-mark">P</div>
+        <h1>PhoneMail</h1>
+      </div>
+
+      <form id="portal-form" class="portal-form">
+        <label>
+          Phone Number
+          <input type="tel" name="phoneNumber" value="9876543210" required />
+        </label>
+
+        <label>
+          OTP
+          <input type="text" name="otp" placeholder="Enter OTP" />
+        </label>
+
+        <button type="submit" class="primary">Create account</button>
+      </form>
+
+      <p class="legal-line">By signing up, you agree to the <a href="#">Terms of Service</a>.</p>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

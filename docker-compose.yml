@@ -1,4 +1,17 @@
 services:
+  frontend:
+    build:
+      context: ./phone-mail-frontend
+      args:
+        VITE_API_URL: http://localhost:3000/api
+        VITE_SOCKET_URL: http://localhost:3000
+        VITE_DEMO_MODE: "false"
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
   db:
     image: postgres:15-alpine
     restart: unless-stopped
@@ -12,7 +25,8 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   api:
-    build: .
+    build:
+      context: ./phone-mail-backend
     restart: unless-stopped
     environment:
       PORT: 3000

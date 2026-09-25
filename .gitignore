@@ -1,0 +1,5 @@
+phone-mail-backend/.env
+.env
+phone-mail-backend/node_modules/
+phone-mail-backend/dist/
+phone-mail-backend/.prisma/

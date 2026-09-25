@@ -1,1 +1,45 @@
 // Prisma schema: User, Alias, Conversation, and Message models will be defined here.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  phoneNumber   String         @unique
+  password      String?        // Fallback if no free OTP providers are available
+  aliasIds      String[]       // Manage alias IDs in settings[cite: 1]
+  language      String         @default("en")
+  profilePic    String?
+  hasMobileApp  Boolean        @default(false) // Used to determine if SMS notifications are needed[cite: 1]
+  conversations Conversation[]
+  createdAt     DateTime       @default(now())
+}
+
+model Conversation {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  contactEmail String    // The other party in the 1-to-1 or group chat
+  isGroup      Boolean   @default(false)
+  messages     Message[]
+  updatedAt    DateTime  @updatedAt
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  subject        String       // Compact Subject field[cite: 1]
+  body           String
+  isIncoming     Boolean      // True if received, False if sent (Unified inbox/sent[cite: 1])
+  isRead         Boolean      @default(false)
+  isFavorited    Boolean      @default(false)
+  hasAttachments Boolean      @default(false)
+  replyToId      String?      // Links to original email[cite: 1]
+  createdAt      DateTime     @default(now())
+}

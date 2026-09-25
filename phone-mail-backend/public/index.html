@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhoneMail Web</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="web-body">
+    <div class="web-shell">
+      <aside class="sidebar">
+        <div class="brand">PhoneMail</div>
+        <nav class="nav">
+          <button class="active">Inbox</button>
+          <button>Drafts</button>
+          <button>Starred</button>
+          <button>Trash</button>
+        </nav>
+      </aside>
+
+      <main class="content-panel">
+        <header class="topbar">
+          <div class="search-wrap">
+            <input type="search" placeholder="Search in emails" />
+          </div>
+          <div class="profile-pill">AK</div>
+        </header>
+
+        <section class="compose-form">
+          <h2>Compose</h2>
+          <form id="web-form">
+            <div class="field-row">
+              <label>To</label>
+              <input name="to" value="9876543210@phonemail.com" />
+            </div>
+            <div class="field-row">
+              <label>Subject</label>
+              <input name="subject" placeholder="Project update" />
+            </div>
+            <textarea name="body" rows="6" placeholder="Write an email..."></textarea>
+            <div class="action-row">
+              <button type="submit" class="primary">Send</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="mail-list">
+          <article class="mail-item unread">
+            <strong>+91 98765 43210</strong>
+            <span>Follow-up on launch plan</span>
+            <small>2 mins ago</small>
+          </article>
+          <article class="mail-item">
+            <strong>+1 415 555 0123</strong>
+            <span>Customer review notes</span>
+            <small>1 hour ago</small>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
