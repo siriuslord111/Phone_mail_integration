@@ -42,8 +42,6 @@ export class TwilioService {
   }
 
   static async sendOTP(toPhone: string, otp: string) {
-    const body = `Your PhoneMail OTP is ${otp}. Use it to verify your account.`;
-
     try {
       if (!client || !env.twilioPhoneNumber) {
         console.log(`Demo OTP for ${toPhone}: ${otp}`);
@@ -51,7 +49,7 @@ export class TwilioService {
       }
 
       await client.messages.create({
-        body,
+        body: env.twilioOtpTemplate,
         from: env.twilioPhoneNumber,
         to: toPhone,
       });

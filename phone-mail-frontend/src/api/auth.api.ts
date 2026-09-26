@@ -8,10 +8,9 @@ export interface VerifyResult {
   isNewUser: boolean;
 }
 
-/** POST /auth/send-otp  { phone } */
-export async function requestOtp(phone: string): Promise<void> {
-  if (DEMO_MODE) return demoDelay();
-  await api.post('/auth/send-otp', { phone });
+function toInternationalPhone(phone: string) {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length === 10 ? `+91${digits}` : phone;
 }
 
 export async function loginWithPassword(phone: string, password: string): Promise<VerifyResult> {
@@ -19,33 +18,34 @@ export async function loginWithPassword(phone: string, password: string): Promis
     await demoDelay();
     if (password.length < 6) throw new Error('Password must be at least 6 characters.');
     const storedPassword = localStorage.getItem(`phonemail_password_${phone}`);
-    if (storedPassword && storedPassword !== password) throw new Error('Incorrect password.');
+    if (!storedPassword) throw new Error('Account not found. Create an account first.');
+    if (storedPassword !== password) throw new Error('Incorrect password.');
     const stored = localStorage.getItem(DEMO_USER_KEY);
-    const existing: User | null = stored ? JSON.parse(stored) : null;
-    const user = existing && existing.phone === phone ? existing : { id: `demo-${phone}`, phone, name: '' };
+    const user: User = stored ? JSON.parse(stored) : { id: `demo-${phone}`, phone, name: '' };
+    localStorage.setItem(DEMO_USER_KEY, JSON.stringify(user));
+    return { token: 'demo-token', user, isNewUser: !user.name };
+  }
+  const { data } = await api.post('/auth/login-password', { phone: toInternationalPhone(phone), password });
+  return { token: data.token, user: data.user, isNewUser: data.isNewUser ?? !data.user?.name };
+}
+
+export async function registerWithPassword(phone: string, password: string): Promise<VerifyResult> {
+  if (DEMO_MODE) {
+    await demoDelay();
+    if (password.length < 6) throw new Error('Password must be at least 6 characters.');
+    if (localStorage.getItem(`phonemail_password_${phone}`)) {
+      throw new Error('An account already exists for this phone number.');
+    }
+    const user: User = { id: `demo-${phone}`, phone, name: '' };
     localStorage.setItem(`phonemail_password_${phone}`, password);
     localStorage.setItem(DEMO_USER_KEY, JSON.stringify(user));
     return { token: 'demo-token', user, isNewUser: !user.name };
   }
-  const { data } = await api.post('/auth/login-password', { phone, password });
-  return { token: data.token, user: data.user, isNewUser: data.isNewUser ?? !data.user?.name };
-}
 
-/** POST /auth/verify-otp  { phone, otp } → { token, user, isNewUser? } */
-export async function verifyOtp(phone: string, otp: string): Promise<VerifyResult> {
-  if (DEMO_MODE) {
-    await demoDelay();
-    if (!/^\d{6}$/.test(otp)) throw new Error('Enter the 6-digit code.');
-
-    const stored = localStorage.getItem(DEMO_USER_KEY);
-    const existing: User | null = stored ? JSON.parse(stored) : null;
-    const user: User =
-      existing && existing.phone === phone ? existing : { id: `demo-${phone}`, phone, name: '' };
-
-    localStorage.setItem(DEMO_USER_KEY, JSON.stringify(user));
-    return { token: 'demo-token', user, isNewUser: !user.name };
-  }
-
-  const { data } = await api.post('/auth/verify-otp', { phone, otp });
+  const { data } = await api.post('/auth/register', {
+    phone: toInternationalPhone(phone),
+    password,
+    client: 'mobile',
+  });
   return { token: data.token, user: data.user, isNewUser: data.isNewUser ?? !data.user?.name };
 }

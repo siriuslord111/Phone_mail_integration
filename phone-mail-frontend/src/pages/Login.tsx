@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 import { getErrorMessage } from '../api/axios';
 
 type Step = 'language' | 'terms' | 'phone';
+type AuthMode = 'login' | 'register';
 
 const LANGUAGES = [
   { code: 'en', label: 'English' },
@@ -17,14 +18,9 @@ const LANGUAGES = [
   { code: 'mr', label: 'मराठी (Marathi)' },
 ];
 
-/**
- * Combines the rulebook's three intro screens (language → terms → phone) into one
- * page with an internal step state, so the routing stays as just /login → /verify-otp.
- */
 export default function Login() {
   const navigate = useNavigate();
-  const { sendOtp, loginPassword } = useAuth();
-
+  const { registerPassword, loginPassword } = useAuth();
   const [step, setStep] = useState<Step>('language');
   const [language, setLanguage] = useState('en');
   const [agreed, setAgreed] = useState(false);
@@ -32,33 +28,35 @@ export default function Login() {
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'otp' | 'password'>('otp');
+  const [mode, setMode] = useState<AuthMode>('login');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleDetectNumber = () => {
-    // Real SIM/number auto-detection needs a native shell (Android SMS Retriever /
-    // iOS equivalent); a browser can only ask permission and let the user paste it in.
-    setPermissionGranted(true);
-  };
-
-  const handleSubmitPhone = async () => {
+  const handleSubmit = async () => {
     if (phone.length !== 10) {
       setError('Enter a valid 10-digit mobile number.');
       return;
     }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (mode === 'register' && password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
-      if (mode === 'password') {
-        const result = await loginPassword(phone, password);
-        if (result.isNewUser) navigate('/verify-otp');
-        else navigate('/', { replace: true });
+      if (mode === 'register') {
+        await registerPassword(phone, password);
       } else {
-        await sendOtp(phone);
-        navigate('/verify-otp');
+        await loginPassword(phone, password);
       }
+      navigate('/', { replace: true });
     } catch (err) {
-      setError(getErrorMessage(err, "Couldn't send the code. Please try again."));
+      setError(getErrorMessage(err, mode === 'register' ? "Couldn't create the account." : "Couldn't log in."));
     } finally {
       setLoading(false);
     }
@@ -72,24 +70,22 @@ export default function Login() {
           <h1 className="text-lg font-semibold text-slate-900">Choose your language</h1>
         </div>
         <p className="mb-5 text-sm text-slate-500">You can change this later in settings.</p>
-
         <div className="flex-1 space-y-2 overflow-y-auto">
-          {LANGUAGES.map((l) => (
+          {LANGUAGES.map((item) => (
             <button
-              key={l.code}
-              onClick={() => setLanguage(l.code)}
+              key={item.code}
+              onClick={() => setLanguage(item.code)}
               className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3.5 text-left text-[15px] transition-all duration-150 ${
-                language === l.code
+                language === item.code
                   ? 'border-[#1a66ff] bg-blue-50 font-medium text-[#0b4fe0]'
                   : 'border-slate-200 text-slate-700 hover:border-slate-300'
               }`}
             >
-              {l.label}
-              {language === l.code && <Check className="size-5 text-[#1a66ff]" />}
+              {item.label}
+              {language === item.code && <Check className="size-5 text-[#1a66ff]" />}
             </button>
           ))}
         </div>
-
         <Button fullWidth size="lg" onClick={() => setStep('terms')} className="mt-5 justify-center">
           Continue
           <ChevronRight className="size-4" />
@@ -105,32 +101,15 @@ export default function Login() {
           <ShieldCheck className="size-5" />
           <h1 className="text-lg font-semibold text-slate-900">Terms &amp; permissions</h1>
         </div>
-        <p className="mb-5 text-sm text-slate-500">
-          PhoneMail needs a couple of permissions to turn your number into an inbox.
-        </p>
-
+        <p className="mb-5 text-sm text-slate-500">PhoneMail needs your agreement before creating an account.</p>
         <div className="flex-1 space-y-3 overflow-y-auto">
-          <PermissionRow
-            title="Phone number &amp; SIM"
-            body="Used to detect and pre-fill your number."
-            granted={permissionGranted}
-          />
-          <PermissionRow
-            title="SMS auto-read"
-            body="Reads only the 6-digit PhoneMail code, to verify you automatically."
-          />
-          <PermissionRow
-            title="Contacts"
-            body="Matches PhoneMail addresses to names you already know."
-          />
+          <PermissionRow title="Phone number" body="Used as your PhoneMail address." granted={permissionGranted} />
+          <PermissionRow title="Contacts" body="Optional contact matching for your inbox." />
         </div>
-
         <div className="mt-5 space-y-4">
           <Checkbox checked={agreed} onChange={setAgreed}>
             I agree to the{' '}
-            <a href="#" className="font-medium text-[#1a66ff] underline underline-offset-2">
-              Terms of Service
-            </a>{' '}
+            <a href="#" className="font-medium text-[#1a66ff] underline underline-offset-2">Terms of Service</a>{' '}
             and Privacy Policy.
           </Checkbox>
           <Button
@@ -138,7 +117,7 @@ export default function Login() {
             size="lg"
             disabled={!agreed}
             onClick={() => {
-              handleDetectNumber();
+              setPermissionGranted(true);
               setStep('phone');
             }}
             className="justify-center"
@@ -153,37 +132,42 @@ export default function Login() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <h1 className="mb-1 text-lg font-semibold text-slate-900">Enter your phone number</h1>
+      <h1 className="mb-1 text-lg font-semibold text-slate-900">
+        {mode === 'register' ? 'Create your PhoneMail account' : 'Log in to PhoneMail'}
+      </h1>
       <p className="mb-5 text-sm text-slate-500">
-        We&apos;ll text a 6-digit code to verify it&apos;s you. This becomes your PhoneMail address.
+        Use your phone number and password. No OTP is required.
       </p>
-
       <PhoneField value={phone} onChange={setPhone} error={error} autoFocus />
-
       <div className="mt-5 flex rounded-xl bg-slate-100 p-1 text-sm">
-        <button onClick={() => setMode('otp')} className={`flex-1 rounded-lg py-2 ${mode === 'otp' ? 'bg-white font-semibold text-[#1a66ff] shadow-sm' : 'text-slate-500'}`}>Use OTP</button>
-        <button onClick={() => setMode('password')} className={`flex-1 rounded-lg py-2 ${mode === 'password' ? 'bg-white font-semibold text-[#1a66ff] shadow-sm' : 'text-slate-500'}`}>Use password</button>
+        <button onClick={() => setMode('login')} className={`flex-1 rounded-lg py-2 ${mode === 'login' ? 'bg-white font-semibold text-[#1a66ff] shadow-sm' : 'text-slate-500'}`}>Log in</button>
+        <button onClick={() => setMode('register')} className={`flex-1 rounded-lg py-2 ${mode === 'register' ? 'bg-white font-semibold text-[#1a66ff] shadow-sm' : 'text-slate-500'}`}>Register</button>
       </div>
-      {mode === 'password' && (
+      <input
+        type="password"
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        placeholder="Password (at least 6 characters)"
+        className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-[#1a66ff]"
+      />
+      {mode === 'register' && (
         <input
           type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
+          value={confirmPassword}
+          onChange={(event) => setConfirmPassword(event.target.value)}
+          placeholder="Confirm password"
           className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-[#1a66ff]"
         />
       )}
-
       {permissionGranted && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600">
           <Check className="size-3.5" />
-          Number auto-filled from this device — edit it if it&apos;s wrong.
+          Your phone number will be used as your PhoneMail address.
         </p>
       )}
-
       <div className="mt-auto pt-6">
-        <Button fullWidth size="lg" loading={loading} onClick={handleSubmitPhone} className="justify-center">
-          {mode === 'otp' ? 'Send code' : 'Log in'}
+        <Button fullWidth size="lg" loading={loading} onClick={handleSubmit} className="justify-center">
+          {mode === 'register' ? 'Create account' : 'Log in'}
         </Button>
       </div>
     </div>
@@ -197,11 +181,7 @@ function PermissionRow({ title, body, granted }: { title: string; body: string; 
         <p className="text-sm font-medium text-slate-800">{title}</p>
         <p className="mt-0.5 text-xs text-slate-500">{body}</p>
       </div>
-      {granted && (
-        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600">
-          Granted
-        </span>
-      )}
+      {granted && <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600">Ready</span>}
     </div>
   );
 }

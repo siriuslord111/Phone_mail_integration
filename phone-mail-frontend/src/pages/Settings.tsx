@@ -49,12 +49,12 @@ export default function Settings() {
             <span className={`block size-4 rounded-full bg-white transition ${compact ? 'translate-x-5' : ''}`} />
           </button>
         </SettingRow>
-        <SettingRow icon={KeyRound} title="Password" description="Use a password as an alternative to OTP">
+        <SettingRow icon={KeyRound} title="Password" description="Your password protects your PhoneMail account">
           <span className="text-xs text-emerald-600">Available at login</span>
         </SettingRow>
         <SettingRow icon={Lock} title="Privacy" description="Your PhoneMail conversations are private" />
         <SettingRow icon={Palette} title="Appearance" description="PhoneMail uses a light, WhatsApp-inspired theme" />
-        <SettingRow icon={ShieldCheck} title="Account security" description="Phone number verification is required for recovery" />
+        <SettingRow icon={ShieldCheck} title="Account security" description="Your phone number identifies your account" />
       </div>
       <button onClick={() => save({})} className="mt-5 text-sm font-medium text-[#1a66ff]">
         {saved ? 'Saved' : 'Save preferences'}

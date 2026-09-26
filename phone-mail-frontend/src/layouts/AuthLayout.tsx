@@ -2,7 +2,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { Lock, Smartphone } from 'lucide-react';
 
 /**
- * Shared chrome for every onboarding screen (language → terms → phone → OTP → name).
+ * Shared chrome for the language, terms, registration, and login screens.
  * WhatsApp-style: a blue hero up top that stays put while a white sheet with the
  * current step slides in underneath it — see the `anim-sheet` keyframe in index.css.
  */

@@ -27,36 +27,31 @@ router.post('/send-otp', async (req: Request, res: Response) => {
 });
 
 router.post('/register', async (req: Request, res: Response) => {
-  const { phoneNumber, otp, password, client } = req.body ?? {};
-  const normalized = normalizePhone(String(phoneNumber ?? ''));
+  const { phoneNumber, phone, password, client } = req.body ?? {};
+  const normalized = normalizePhone(String(phoneNumber ?? phone ?? ''));
 
   if (!normalized) {
     return res.status(400).json({ success: false, message: 'Phone number is required.' });
   }
 
-  if (!otp && !password) {
-    return res.status(400).json({ success: false, message: 'Provide OTP or password.' });
+  if (typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
   }
 
-  const storedOtp = otpStore.get(normalized);
-  if (otp && storedOtp && otp !== storedOtp) {
-    return res.status(400).json({ success: false, message: 'Invalid OTP.' });
+  if (users.some((entry) => entry.phoneNumber === normalized)) {
+    return res.status(409).json({ success: false, message: 'An account already exists for this phone number.' });
   }
 
   const user = ensureUser(normalized, password, client === 'mobile');
 
-  if (!user.password && !password) {
-    user.password = 'phonemail';
-  }
-
-  if (!otp && !password) {
-    return res.status(400).json({ success: false, message: 'Registration requires OTP or password.' });
-  }
-
   const payload = {
     success: true,
+    token: `phonemail-${user.id}`,
+    isNewUser: true,
     user: {
       id: user.id,
+      phone: user.phoneNumber.replace(/^\+1/, ''),
+      name: '',
       phoneNumber: user.phoneNumber,
       email: user.email,
       hasMobileApp: user.hasMobileApp,
@@ -68,8 +63,8 @@ router.post('/register', async (req: Request, res: Response) => {
 });
 
 router.post('/login', (req: Request, res: Response) => {
-  const { phoneNumber, otp, password } = req.body ?? {};
-  const normalized = normalizePhone(String(phoneNumber ?? ''));
+  const { phoneNumber, phone, password } = req.body ?? {};
+  const normalized = normalizePhone(String(phoneNumber ?? phone ?? ''));
 
   if (!normalized) {
     return res.status(400).json({ success: false, message: 'Phone number is required.' });
@@ -80,24 +75,19 @@ router.post('/login', (req: Request, res: Response) => {
     return res.status(404).json({ success: false, message: 'User not found. Create an account first.' });
   }
 
-  if (otp) {
-    const expectedOtp = otpStore.get(normalized);
-    if (!expectedOtp || expectedOtp !== String(otp)) {
-      return res.status(401).json({ success: false, message: 'OTP mismatch.' });
-    }
-  } else if (password) {
-    if (user.password !== String(password)) {
-      return res.status(401).json({ success: false, message: 'Invalid password.' });
-    }
-  } else {
-    return res.status(400).json({ success: false, message: 'Provide otp or password.' });
+  if (typeof password !== 'string' || user.password !== password) {
+    return res.status(401).json({ success: false, message: 'Invalid phone number or password.' });
   }
 
   return res.json({
     success: true,
     message: 'Login successful.',
+    token: `phonemail-${user.id}`,
+    isNewUser: false,
     user: {
       id: user.id,
+      phone: user.phoneNumber.replace(/^\+1/, ''),
+      name: '',
       phoneNumber: user.phoneNumber,
       email: user.email,
       hasMobileApp: user.hasMobileApp,

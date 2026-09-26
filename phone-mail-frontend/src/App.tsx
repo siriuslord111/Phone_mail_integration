@@ -7,7 +7,6 @@ import { LoadingSpinner } from './components/common/LoadingSpinner';
 import AuthLayout from './layouts/AuthLayout';
 import MainLayout from './layouts/MainLayout';
 import Login from './pages/Login';
-import VerifyOTP from './pages/VerifyOTP';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import Profile from './pages/Profile';
@@ -41,7 +40,6 @@ function AppRoutes() {
         }
       >
         <Route path="/login" element={<Login />} />
-        <Route path="/verify-otp" element={<VerifyOTP />} />
       </Route>
 
       <Route
