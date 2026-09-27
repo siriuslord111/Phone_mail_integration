@@ -2,9 +2,18 @@ export type User = {
   id: string;
   phoneNumber: string;
   email: string;
-  password?: string;
+  name?: string;
+  bio?: string;
+  passwordHash?: string;
   createdAt: string;
   hasMobileApp: boolean;
+};
+
+export type OtpChallenge = {
+  hash: string;
+  expiresAt: number;
+  attempts: number;
+  purpose: 'login' | 'register';
 };
 
 export type Message = {
@@ -19,29 +28,24 @@ export type Message = {
 
 export const users: User[] = [];
 export const messages: Message[] = [];
-export const otpStore = new Map<string, string>();
+export const otpStore = new Map<string, OtpChallenge>();
 
 export function normalizePhone(phone: string) {
   const digits = phone.replace(/\D/g, '');
   if (!digits) return '';
-  return digits.length === 10 ? `+1${digits}` : `+${digits}`;
+  return digits.length === 10 ? `+91${digits}` : `+${digits}`;
 }
 
-export function ensureUser(phoneNumber: string, password?: string, hasMobileApp = false): User {
+export function ensureUser(phoneNumber: string, passwordHash?: string, hasMobileApp = false): User {
   const normalized = normalizePhone(phoneNumber);
   const existing = users.find((user) => user.phoneNumber === normalized);
-  if (existing) {
-    if (password && existing.password !== password) {
-      throw new Error('Invalid password.');
-    }
-    return existing;
-  }
+  if (existing) return existing;
 
   const user: User = {
     id: `user-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     phoneNumber: normalized,
     email: `${normalized.replace(/\D/g, '')}@phonemail.com`,
-    password,
+    passwordHash,
     createdAt: new Date().toISOString(),
     hasMobileApp,
   };

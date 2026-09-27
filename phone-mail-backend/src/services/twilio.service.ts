@@ -1,11 +1,5 @@
 import twilio from 'twilio';
 
-import { env } from '../config/env';
-
-const client = /^AC[a-zA-Z0-9]+$/.test(env.twilioAccountSid) && env.twilioAuthToken
-  ? twilio(env.twilioAccountSid, env.twilioAuthToken)
-  : null;
-
 export class TwilioService {
   static generateIVRMenu() {
     const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -37,43 +31,22 @@ export class TwilioService {
     return response.toString();
   }
 
-  static generateOTP() {
-    return String(Math.floor(100000 + Math.random() * 900000));
-  }
-
-  static async sendOTP(toPhone: string, otp: string) {
-    try {
-      if (!client || !env.twilioPhoneNumber) {
-        console.log(`Demo OTP for ${toPhone}: ${otp}`);
-        return false;
-      }
-
-      await client.messages.create({
-        body: env.twilioOtpTemplate,
-        from: env.twilioPhoneNumber,
-        to: toPhone,
-      });
-
-      return true;
-    } catch (error) {
-      console.warn('Twilio SMS failed, falling back to demo mode:', error);
-      console.log(`Demo OTP for ${toPhone}: ${otp}`);
-      return false;
-    }
-  }
-
   static async sendEmailNotificationSMS(toPhone: string, senderName: string, subject: string) {
+    const client = /^AC[a-zA-Z0-9]+$/.test(process.env.TWILIO_ACCOUNT_SID ?? '')
+      && process.env.TWILIO_AUTH_TOKEN
+      ? twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN)
+      : null;
     const message = `You have received an email from ${senderName}. Subject: ${subject}.`;
 
     try {
-      if (!client || !env.twilioPhoneNumber) {
+      if (!client || !process.env.TWILIO_PHONE_NUMBER) {
         console.log(`Mock SMS to ${toPhone}: ${message}`);
         return false;
       }
 
       await client.messages.create({
         body: message,
-        from: env.twilioPhoneNumber,
+        from: process.env.TWILIO_PHONE_NUMBER,
         to: toPhone,
       });
 

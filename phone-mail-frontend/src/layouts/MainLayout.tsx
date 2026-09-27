@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   FileText,
   Inbox,
@@ -17,6 +17,7 @@ import { cn } from '../utils/cn';
 import { getInitials } from '../utils/formatters';
 import { useAuth } from '../hooks/useAuth';
 import type { LucideIcon } from 'lucide-react';
+import { ComposeModal } from '../components/mail/ComposeModal';
 
 interface NavItem {
   to: string;
@@ -40,9 +41,10 @@ export interface LayoutContext {
 }
 
 export default function MainLayout() {
-  const { pathname, search: routeSearch } = useLocation();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const [params, setParams] = useSearchParams();
 
   const name = user?.name || 'You';
   const email = user?.phone ? `${user.phone}@phonemail.com` : '';
@@ -51,10 +53,13 @@ export default function MainLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // A chat thread open on mobile hides our header/FAB — Dashboard renders its own.
-  const chatOpen = new URLSearchParams(routeSearch).get('chat') !== null;
+  const chatOpen = params.get('chat') !== null;
+  const composeMode = params.get('compose');
+  const searchVisible = !pathname.startsWith('/settings') && !pathname.startsWith('/profile');
 
   useEffect(() => setDrawerOpen(false), [pathname]);
 
@@ -67,10 +72,18 @@ export default function MainLayout() {
     return () => document.removeEventListener('mousedown', onClick);
   }, [menuOpen]);
 
-  const handleLogout = () => {
+  const confirmLogout = () => {
+    setLogoutConfirmOpen(false);
     logout();
     navigate('/login', { replace: true });
   };
+
+  const closeCompose = () =>
+    setParams((current) => {
+      const next = Object.fromEntries(current);
+      delete next.compose;
+      return next;
+    });
 
   const outletContext: LayoutContext = { search, setSearch };
 
@@ -117,16 +130,18 @@ export default function MainLayout() {
             </button>
           </div>
 
-          <label className="relative mt-3 flex h-12 items-center gap-3 rounded-2xl bg-white px-4 text-slate-700 shadow-lg shadow-blue-900/20 transition-all duration-300 focus-within:shadow-xl focus-within:ring-2 focus-within:ring-white/60">
-            <Search className="size-5 shrink-0 text-slate-400" />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search people, emails or phone numbers"
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
-            />
-          </label>
+          {searchVisible && (
+            <label className="relative mt-3 flex h-12 items-center gap-3 rounded-2xl bg-white px-4 text-slate-700 shadow-lg shadow-blue-900/20 transition-all duration-300 focus-within:shadow-xl focus-within:ring-2 focus-within:ring-white/60">
+              <Search className="size-5 shrink-0 text-slate-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search people, emails or phone numbers"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+              />
+            </label>
+          )}
         </header>
       )}
 
@@ -150,16 +165,18 @@ export default function MainLayout() {
           </span>
         </div>
 
-        <label className="flex h-12 max-w-2xl flex-1 items-center gap-3 rounded-full bg-slate-100 px-4 text-slate-700 transition-colors focus-within:bg-white focus-within:shadow-md focus-within:ring-1 focus-within:ring-slate-200">
-          <Search className="size-5 shrink-0 text-slate-400" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search people, emails or phone numbers"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
-          />
-        </label>
+        {searchVisible && (
+          <label className="flex h-12 max-w-2xl flex-1 items-center gap-3 rounded-full bg-slate-100 px-4 text-slate-700 transition-colors focus-within:bg-white focus-within:shadow-md focus-within:ring-1 focus-within:ring-slate-200">
+            <Search className="size-5 shrink-0 text-slate-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search people, emails or phone numbers"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            />
+          </label>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <Link
@@ -201,24 +218,11 @@ export default function MainLayout() {
                 </div>
               </button>
               <div className="p-2">
-                <Link
-                  to="/settings"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition hover:bg-slate-100"
-                >
-                  <Settings className="size-5 text-slate-500" />
-                  Settings &amp; aliases
-                </Link>
-                <Link
-                  to="/profile"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition hover:bg-slate-100"
-                >
-                  <Smartphone className="size-5 text-slate-500" />
-                  Profile &amp; shared content
-                </Link>
                 <button
-                  onClick={handleLogout}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setLogoutConfirmOpen(true);
+                  }}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-rose-600 transition hover:bg-rose-50"
                 >
                   <LogOut className="size-5" />
@@ -351,7 +355,7 @@ export default function MainLayout() {
             <button
               onClick={() => {
                 setDrawerOpen(false);
-                handleLogout();
+                setLogoutConfirmOpen(true);
               }}
               className="flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-[15px] text-rose-600 transition-colors active:bg-rose-50"
             >
@@ -361,6 +365,41 @@ export default function MainLayout() {
           </div>
         </nav>
       </div>
+
+      {composeMode && (
+        <ComposeModal
+          lockedTo={composeMode !== '1' ? composeMode : undefined}
+          onClose={closeCompose}
+          onSent={closeCompose}
+        />
+      )}
+
+      {logoutConfirmOpen && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="signout-title"
+            className="w-full max-w-xs rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <h2 id="signout-title" className="text-base font-semibold text-slate-900">Are you ready to sign out?</h2>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setLogoutConfirmOpen(false)}
+                className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmLogout}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+              >
+                Sign out
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

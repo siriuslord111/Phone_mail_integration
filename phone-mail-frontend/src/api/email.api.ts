@@ -127,16 +127,18 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
   }
 
   const form = new FormData();
-  payload.to.forEach((t) => form.append('to[]', t));
-  payload.cc?.forEach((c) => form.append('cc[]', c));
+  payload.to.forEach((recipient) => form.append('to[]', recipient));
   if (payload.subject) form.append('subject', payload.subject);
   form.append('body', payload.body);
-  if (payload.inReplyTo) form.append('inReplyTo', payload.inReplyTo);
-  payload.attachments?.forEach((f) => form.append('attachments', f));
+  payload.attachments?.forEach((file) => form.append('attachments', file));
 
-  const { data } = await api.post('/messages', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const { data } = payload.attachments?.length
+    ? await api.post('/messages', form)
+    : await api.post('/messages', {
+        to: payload.to,
+        subject: payload.subject,
+        body: payload.body,
+      });
   return data.message ?? data;
 }
 

@@ -19,6 +19,7 @@ interface MailListProps {
   activeId?: string;
   onOpen: (conversation: Conversation) => void;
   search: string;
+  compact?: boolean;
 }
 
 export function MailList({
@@ -29,6 +30,7 @@ export function MailList({
   activeId,
   onOpen,
   search,
+  compact = false,
 }: MailListProps) {
   return (
     <div className="flex h-full flex-col">
@@ -61,7 +63,10 @@ export function MailList({
                 <button
                   onClick={() => onOpen(c)}
                   className={cn(
-                    'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors duration-100 md:px-5',
+                    cn(
+                      'flex w-full items-center gap-3 px-4 text-left transition-colors duration-100 md:px-5',
+                      compact ? 'py-2' : 'py-3.5',
+                    ),
                     activeId === c.id ? 'bg-blue-50' : 'hover:bg-slate-50 active:bg-slate-100',
                   )}
                 >

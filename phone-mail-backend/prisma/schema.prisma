@@ -11,7 +11,7 @@ datasource db {
 model User {
   id            String         @id @default(uuid())
   phoneNumber   String         @unique
-  password      String?        // Fallback if no free OTP providers are available
+  passwordHash  String?        // Argon2id hash for password fallback accounts
   aliasIds      String[]       // Manage alias IDs in settings[cite: 1]
   language      String         @default("en")
   profilePic    String?

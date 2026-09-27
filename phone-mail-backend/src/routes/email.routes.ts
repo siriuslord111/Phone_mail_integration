@@ -3,19 +3,20 @@ import { Router } from 'express';
 import { addMessage, messages, normalizePhone, users } from '../store';
 import { TwilioService } from '../services/twilio.service';
 import { sendOutboundEmail } from '../services/email.service';
+import { requireAuth } from '../middlewares/auth';
 
 const router = Router();
+router.use(requireAuth);
 
 router.get('/inbox', (req, res) => {
-  const phoneNumber = String(req.query.phoneNumber ?? '');
-  const normalized = normalizePhone(phoneNumber);
+  const normalized = res.locals.authenticatedUser.phoneNumber;
 
   const inbox = messages.filter((message) => message.to.includes(normalized));
   return res.json({ success: true, messages: inbox });
 });
 
 router.get('/conversation', (req, res) => {
-  const phoneNumber = String(req.query.phoneNumber ?? '');
+  const phoneNumber = res.locals.authenticatedUser.phoneNumber;
   const peer = String(req.query.peer ?? '');
   const normalized = normalizePhone(phoneNumber);
   const peerNormalized = normalizePhone(peer);
@@ -31,8 +32,8 @@ router.get('/conversation', (req, res) => {
 });
 
 router.post('/send', async (req, res) => {
-  const { from, to, subject, body } = req.body ?? {};
-  const sender = normalizePhone(String(from ?? ''));
+  const { to, subject, body } = req.body ?? {};
+  const sender = res.locals.authenticatedUser.phoneNumber;
   const rawRecipients = Array.isArray(to) ? to.map((value) => String(value)) : [String(to ?? '')];
   const recipients = rawRecipients
     .filter((value) => value.trim().length > 0)
@@ -44,7 +45,7 @@ router.post('/send', async (req, res) => {
 
   const saved = addMessage({
     from: sender,
-    to: rawRecipients,
+    to: recipients,
     subject: String(subject ?? 'New message'),
     body: String(body),
   });
@@ -78,7 +79,9 @@ router.post('/send', async (req, res) => {
 
 router.get('/search', (req, res) => {
   const query = String(req.query.q ?? '').toLowerCase();
+  const phone = res.locals.authenticatedUser.phoneNumber;
   const results = messages.filter((message) => {
+    if (message.from !== phone && !message.to.includes(phone)) return false;
     const haystack = `${message.from} ${message.subject} ${message.body}`.toLowerCase();
     return haystack.includes(query);
   });

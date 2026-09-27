@@ -54,15 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
           try {
             const result = await api('/api/auth/send-otp', {
               method: 'POST',
-              body: JSON.stringify({ phoneNumber: requestedPhone }),
+              body: JSON.stringify({ phoneNumber: requestedPhone, purpose: 'register' }),
             });
-            if (result.otp) {
-              document.getElementById('mobile-otp').value = result.otp;
-            }
             showMobileMessage('success', result.message);
             showStep(3);
           } catch (error) {
             showMobileMessage('error', error.message);
+            showStep(3);
           }
           return;
         }
@@ -73,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('mobile-verify').addEventListener('click', async () => {
       try {
-        await api('/api/auth/register', {
+        const result = await api('/api/auth/register-otp', {
           method: 'POST',
           body: JSON.stringify({
             phoneNumber: requestedPhone || document.getElementById('mobile-phone').value,
@@ -81,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
             client: 'mobile',
           }),
         });
+        localStorage.setItem('phonemail_token', result.token);
         onboarding.hidden = true;
         mobileHome.hidden = false;
       } catch (error) {
@@ -88,9 +87,48 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
+    const passwordFallback = document.getElementById('mobile-password-fallback');
+    const passwordInput = document.getElementById('mobile-password');
+    const passwordSubmit = document.getElementById('mobile-password-submit');
+    const passwordToggle = document.getElementById('mobile-password-toggle');
+    let passwordMode = 'register';
+
     document.getElementById('mobile-password-mode').addEventListener('click', () => {
-      showMobileMessage('success', 'Password fallback is available from the web portal.');
-      showStep(2);
+      passwordFallback.hidden = false;
+      document.getElementById('mobile-verify').hidden = true;
+      document.getElementById('mobile-password-mode').hidden = true;
+    });
+
+    document.getElementById('mobile-otp-mode').addEventListener('click', () => {
+      passwordFallback.hidden = true;
+      document.getElementById('mobile-verify').hidden = false;
+      document.getElementById('mobile-password-mode').hidden = false;
+    });
+
+    passwordToggle.addEventListener('click', () => {
+      passwordMode = passwordMode === 'register' ? 'login' : 'register';
+      passwordInput.autocomplete = passwordMode === 'register' ? 'new-password' : 'current-password';
+      passwordSubmit.textContent = passwordMode === 'register' ? 'Create account with password' : 'Log in with password';
+      passwordToggle.textContent = passwordMode === 'register' ? 'Already have an account? Log in' : 'Need an account? Sign up';
+    });
+
+    passwordSubmit.addEventListener('click', async () => {
+      const endpoint = passwordMode === 'register' ? '/api/auth/register' : '/api/auth/login-password';
+      try {
+        const result = await api(endpoint, {
+          method: 'POST',
+          body: JSON.stringify({
+            phoneNumber: requestedPhone || document.getElementById('mobile-phone').value,
+            password: passwordInput.value,
+            client: 'mobile',
+          }),
+        });
+        localStorage.setItem('phonemail_token', result.token);
+        onboarding.hidden = true;
+        mobileHome.hidden = false;
+      } catch (error) {
+        showMobileMessage('error', error.message);
+      }
     });
   }
 
@@ -99,23 +137,95 @@ document.addEventListener('DOMContentLoaded', () => {
     const banner = document.createElement('div');
     banner.className = 'message-banner';
     portalForm.appendChild(banner);
+    const showPortalMessage = (kind, text) => {
+      banner.className = `message-banner ${kind}`;
+      banner.textContent = text;
+    };
+    const otpInput = portalForm.elements.namedItem('otp');
+    const phoneInput = portalForm.elements.namedItem('phoneNumber');
+    const submitButton = portalForm.querySelector('button[type="submit"]');
+    let otpRequested = false;
+    const passwordForm = document.getElementById('portal-password-form');
+    const passwordModeToggle = document.getElementById('portal-password-mode');
+    const passwordConfirmLabel = document.getElementById('portal-confirm-label');
+    const passwordSubmit = passwordForm.querySelector('button[type="submit"]');
+    let passwordMode = 'register';
+
+    passwordModeToggle.addEventListener('click', () => {
+      portalForm.hidden = true;
+      passwordModeToggle.hidden = true;
+      passwordForm.hidden = false;
+    });
+
+    document.getElementById('portal-password-toggle').addEventListener('click', () => {
+      passwordMode = passwordMode === 'register' ? 'login' : 'register';
+      passwordConfirmLabel.hidden = passwordMode === 'login';
+      passwordConfirmLabel.querySelector('input').required = passwordMode === 'register';
+      passwordSubmit.textContent = passwordMode === 'register' ? 'Create account with password' : 'Log in with password';
+      document.getElementById('portal-password-toggle').textContent =
+        passwordMode === 'register' ? 'Already have an account? Log in' : 'Need an account? Sign up';
+    });
+
+    passwordForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(passwordForm);
+      const password = String(formData.get('password') || '');
+      if (passwordMode === 'register' && password !== formData.get('confirmPassword')) {
+        showPortalMessage('error', 'Passwords do not match.');
+        return;
+      }
+      try {
+        const endpoint = passwordMode === 'register' ? '/api/auth/register' : '/api/auth/login-password';
+        const result = await api(endpoint, {
+          method: 'POST',
+          body: JSON.stringify({ phoneNumber: phoneInput.value, password, client: 'portal' }),
+        });
+        localStorage.setItem('phonemail_token', result.token);
+        showPortalMessage('success', passwordMode === 'register' ? 'Account created.' : 'Login successful.');
+      } catch (error) {
+        showPortalMessage('error', error.message || 'Unable to authenticate.');
+      }
+    });
 
     portalForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const formData = new FormData(portalForm);
       const phoneNumber = formData.get('phoneNumber');
-      const otp = formData.get('otp');
+      const otp = String(formData.get('otp') || '');
 
       try {
-        const result = await api('/api/auth/register', {
-          method: 'POST',
-          body: JSON.stringify({ phoneNumber, otp: otp || undefined }),
-        });
+        if (!otpRequested) {
+          const result = await api('/api/auth/send-otp', {
+            method: 'POST',
+            body: JSON.stringify({ phoneNumber, purpose: 'register' }),
+          });
+          otpRequested = true;
+          otpInput.required = true;
+          phoneInput.readOnly = true;
+          submitButton.textContent = 'Create account';
+          showPortalMessage('success', result.message || 'OTP sent. Enter it to create your account.');
+          return;
+        }
 
-        showBanner('success', result.message || 'Account created.');
+        const result = await api('/api/auth/register-otp', {
+          method: 'POST',
+          body: JSON.stringify({ phoneNumber, otp, client: 'portal' }),
+        });
+        localStorage.setItem('phonemail_token', result.token);
+        showPortalMessage('success', result.message || 'Account created.');
         portalForm.reset();
+        otpRequested = false;
+        otpInput.required = false;
+        phoneInput.readOnly = false;
+        submitButton.textContent = 'Send OTP';
       } catch (error) {
-        showBanner('error', error.message || 'Unable to create account.');
+        showPortalMessage('error', error.message || 'Unable to create account.');
+        if (otpRequested) {
+          otpRequested = false;
+          otpInput.required = false;
+          phoneInput.readOnly = false;
+          submitButton.textContent = 'Send OTP';
+        }
       }
     });
   }

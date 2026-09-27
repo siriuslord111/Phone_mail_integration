@@ -42,6 +42,12 @@
           <input id="mobile-otp" class="onboarding-input" type="text" inputmode="numeric" placeholder="6-digit OTP" autocomplete="one-time-code" />
           <button class="primary" id="mobile-verify" type="button">Verify and open inbox</button>
           <button class="text-button" id="mobile-password-mode" type="button">Use password instead</button>
+          <div id="mobile-password-fallback" hidden>
+            <input id="mobile-password" class="onboarding-input" type="password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="Password (8–128 characters)" />
+            <button class="primary" id="mobile-password-submit" type="button">Create account with password</button>
+            <button class="text-button" id="mobile-password-toggle" type="button">Already have an account? Log in</button>
+            <button class="text-button" id="mobile-otp-mode" type="button">Back to OTP</button>
+          </div>
         </div>
         <div id="mobile-onboarding-message" class="message-banner"></div>
       </section>

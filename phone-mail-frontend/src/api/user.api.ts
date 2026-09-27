@@ -13,7 +13,7 @@ export async function getMe(): Promise<User> {
   return data.user ?? data;
 }
 
-/** PATCH /users/me  { name?, avatarUrl? } */
+/** PATCH /users/me { name?, avatarUrl?, bio? } */
 export async function updateProfile(patch: Partial<Pick<User, 'name' | 'avatarUrl' | 'bio'>>): Promise<User> {
   if (DEMO_MODE) {
     await demoDelay(200);

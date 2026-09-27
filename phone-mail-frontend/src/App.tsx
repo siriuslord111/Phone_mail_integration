@@ -54,6 +54,7 @@ function AppRoutes() {
         <Route path="/spam" element={<Dashboard />} />
         <Route path="/trash" element={<Dashboard />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/settings/:section" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
       </Route>
 

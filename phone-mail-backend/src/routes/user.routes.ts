@@ -1,16 +1,12 @@
 import { Router } from 'express';
 
-import { users } from '../store';
+import { requireAuth } from '../middlewares/auth';
 
 const router = Router();
+router.use(requireAuth);
 
-router.get('/profile', (req, res) => {
-  const phoneNumber = String(req.query.phoneNumber ?? '');
-  const user = users.find((entry) => entry.phoneNumber === phoneNumber);
-
-  if (!user) {
-    return res.status(404).json({ success: false, message: 'User profile not found.' });
-  }
+router.get('/profile', (_req, res) => {
+  const user = res.locals.authenticatedUser;
 
   return res.json({
     success: true,
@@ -28,12 +24,7 @@ router.get('/profile', (req, res) => {
 });
 
 router.get('/aliases', (req, res) => {
-  const phoneNumber = String(req.query.phoneNumber ?? '');
-  const user = users.find((entry) => entry.phoneNumber === phoneNumber);
-
-  if (!user) {
-    return res.status(404).json({ success: false, message: 'User not found.' });
-  }
+  const user = res.locals.authenticatedUser;
 
   return res.json({
     success: true,
@@ -45,17 +36,17 @@ router.get('/aliases', (req, res) => {
 });
 
 router.put('/preferences', (req, res) => {
-  const { phoneNumber } = req.body ?? {};
-  const user = users.find((entry) => entry.phoneNumber === phoneNumber);
-
-  if (!user) {
-    return res.status(404).json({ success: false, message: 'User not found.' });
-  }
+  const user = res.locals.authenticatedUser;
 
   return res.json({
     success: true,
     message: 'Preferences updated.',
-    user,
+    user: {
+      id: user.id,
+      phoneNumber: user.phoneNumber,
+      email: user.email,
+      hasMobileApp: user.hasMobileApp,
+    },
   });
 });
 

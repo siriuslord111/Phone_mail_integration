@@ -6,10 +6,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { loginWithPassword, registerWithPassword } from '../api/auth.api';
+import { loginWithPassword, registerWithPassword, verifyOtp, type AuthPurpose } from '../api/auth.api';
 import { DEMO_MODE, DEMO_USER_KEY, TOKEN_KEY } from '../api/axios';
 import { getMe, updateProfile } from '../api/user.api';
 import type { User } from '../types';
+
+type ProfilePatch = Partial<Pick<User, 'name' | 'avatarUrl' | 'bio'>>;
 
 export interface AuthContextValue {
   user: User | null;
@@ -17,7 +19,9 @@ export interface AuthContextValue {
   initializing: boolean;
   registerPassword: (phone: string, password: string) => Promise<void>;
   loginPassword: (phone: string, password: string) => Promise<{ isNewUser: boolean }>;
+  authenticateOtp: (phone: string, otp: string, purpose: AuthPurpose) => Promise<{ isNewUser: boolean }>;
   completeProfile: (name: string) => Promise<void>;
+  saveProfile: (patch: ProfilePatch) => Promise<void>;
   logout: () => void;
 }
 
@@ -49,6 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(updated);
   }, []);
 
+  const saveProfile = useCallback(async (patch: ProfilePatch) => {
+    const updated = await updateProfile(patch);
+    setUser(updated);
+  }, []);
+
   const loginPassword = useCallback(async (phone: string, password: string) => {
     const { token, user: loggedInUser, isNewUser } = await loginWithPassword(phone, password);
     localStorage.setItem(TOKEN_KEY, token);
@@ -62,6 +71,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(registeredUser);
   }, []);
 
+  const authenticateOtp = useCallback(async (phone: string, otp: string, purpose: AuthPurpose) => {
+    const { token, user: verifiedUser, isNewUser } = await verifyOtp(phone, otp, purpose);
+    localStorage.setItem(TOKEN_KEY, token);
+    setUser(verifiedUser);
+    return { isNewUser };
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(DEMO_USER_KEY);
@@ -69,8 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, initializing, registerPassword, loginPassword, completeProfile, logout }),
-    [user, initializing, registerPassword, loginPassword, completeProfile, logout],
+    () => ({ user, initializing, registerPassword, loginPassword, authenticateOtp, completeProfile, saveProfile, logout }),
+    [user, initializing, registerPassword, loginPassword, authenticateOtp, completeProfile, saveProfile, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

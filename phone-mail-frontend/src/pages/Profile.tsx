@@ -1,18 +1,33 @@
 import { Camera, FileText, Image, Link2, PlaySquare } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { useState } from 'react';
-import { updateProfile } from '../api/user.api';
+import { useEffect, useState } from 'react';
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, saveProfile } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setName(user?.name || '');
+    setBio(user?.bio || '');
+  }, [user?.name, user?.bio]);
 
   const save = async () => {
-    await updateProfile({ name: name.trim(), bio: bio.trim() });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
+    setSaving(true);
+    setError('');
+    setSaved(false);
+    try {
+      await saveProfile({ name: name.trim(), bio: bio.trim() });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save your profile.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -23,13 +38,14 @@ export default function Profile() {
             {(name || 'Y').slice(0, 1).toUpperCase()}
             <button aria-label="Change profile picture" className="absolute -bottom-1 -right-1 grid size-7 place-items-center rounded-full bg-white text-[#1a66ff]"><Camera className="size-4" /></button>
           </div>
-          <div><h1 className="text-xl font-semibold">{name || 'Your profile'}</h1><p className="text-sm text-blue-100">{user?.phone}@phonemail.com</p></div>
+          <div><h1 className="text-xl font-semibold">{name || 'Your profile'}</h1><p className="text-sm text-blue-100">{user?.phone}@phonemail.com</p><p className="mt-1 text-sm text-blue-100">{bio || 'Available for messages'}</p></div>
         </div>
       </div>
       <div className="mt-5 space-y-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <label className="block text-sm font-medium text-slate-600">Name<input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full rounded-xl bg-slate-50 px-3 py-2.5 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" /></label>
-        <label className="block text-sm font-medium text-slate-600">About<input value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Available for messages" className="mt-1 w-full rounded-xl bg-slate-50 px-3 py-2.5 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" /></label>
-        <button onClick={save} className="rounded-xl bg-[#1a66ff] px-4 py-2 text-sm font-semibold text-white">{saved ? 'Saved' : 'Save profile'}</button>
+        <label className="block text-sm font-medium text-slate-600">Name<input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} className="mt-1 w-full rounded-xl bg-slate-50 px-3 py-2.5 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" /></label>
+        <label className="block text-sm font-medium text-slate-600">Description<input value={bio} onChange={(e) => setBio(e.target.value)} maxLength={500} placeholder="Available for messages" className="mt-1 w-full rounded-xl bg-slate-50 px-3 py-2.5 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" /></label>
+        {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
+        <button onClick={save} disabled={saving} className="rounded-xl bg-[#1a66ff] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Saving…' : saved ? 'Saved' : 'Save profile'}</button>
       </div>
       <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="mb-3 font-semibold text-slate-800">Shared content</h2>

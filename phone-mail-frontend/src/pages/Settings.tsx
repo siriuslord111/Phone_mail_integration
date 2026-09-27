@@ -1,21 +1,139 @@
-import { Bell, ChevronRight, KeyRound, Lock, Palette, ShieldCheck, SlidersHorizontal } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { useState } from 'react';
-import type { ReactNode } from 'react';
-import { useAuth } from '../hooks/useAuth';
-import { updateProfile } from '../api/user.api';
+import {
+  Bell,
+  ChevronLeft,
+  ChevronRight,
+  KeyRound,
+  Lock,
+  Palette,
+  ShieldCheck,
+  SlidersHorizontal,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import type { LucideIcon } from 'lucide-react';
+
+interface SettingsOption {
+  id: string;
+  title: string;
+  description: string;
+  detail: string;
+  icon: LucideIcon;
+}
+
+const OPTIONS: SettingsOption[] = [
+  {
+    id: 'notifications',
+    title: 'Notifications',
+    description: 'Get notified about new messages',
+    detail: 'Choose whether PhoneMail should show message notifications.',
+    icon: Bell,
+  },
+  {
+    id: 'conversations',
+    title: 'Compact conversations',
+    description: 'Show more messages in the chat list',
+    detail: 'Use a compact layout for conversation lists.',
+    icon: SlidersHorizontal,
+  },
+  {
+    id: 'password',
+    title: 'Password',
+    description: 'Your password protects your PhoneMail account',
+    detail: 'Password changes are not available in the app yet. Use the sign-in screen to manage account access.',
+    icon: KeyRound,
+  },
+  {
+    id: 'privacy',
+    title: 'Privacy',
+    description: 'Your PhoneMail conversations are private',
+    detail: 'Your messages are associated with your account and are only shown after you sign in.',
+    icon: Lock,
+  },
+  {
+    id: 'appearance',
+    title: 'Appearance',
+    description: 'PhoneMail uses a light, WhatsApp-inspired theme',
+    detail: 'The light appearance is currently the only available theme.',
+    icon: Palette,
+  },
+  {
+    id: 'security',
+    title: 'Account security',
+    description: 'Your phone number identifies your account',
+    detail: 'Sign-in is protected by your password or a one-time verification code, depending on the method you choose.',
+    icon: ShieldCheck,
+  },
+];
+
+const PREFERENCE_KEYS: Record<string, string> = {
+  notifications: 'phonemail_setting_notifications',
+  conversations: 'phonemail_setting_compact_conversations',
+};
+
+function readPreference(key: string, defaultValue: boolean) {
+  const saved = localStorage.getItem(key);
+  return saved === null ? defaultValue : saved === 'true';
+}
 
 export default function Settings() {
-  const { user } = useAuth();
-  const [notifications, setNotifications] = useState(true);
-  const [compact, setCompact] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const { section } = useParams();
+  const option = OPTIONS.find((item) => item.id === section);
+  const [enabled, setEnabled] = useState(true);
 
-  const save = async (patch: { name?: string; bio?: string }) => {
-    await updateProfile(patch);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
-  };
+  useEffect(() => {
+    if (option && PREFERENCE_KEYS[option.id]) {
+      setEnabled(readPreference(PREFERENCE_KEYS[option.id], option.id === 'notifications'));
+    }
+  }, [option]);
+
+  if (section) {
+    if (!option) {
+      return (
+        <div className="mx-auto max-w-2xl p-5 md:p-8">
+          <Link to="/settings" className="mb-5 inline-flex items-center gap-1 text-sm text-[#1a66ff]">
+            <ChevronLeft className="size-4" /> All settings
+          </Link>
+          <h1 className="text-2xl font-semibold text-slate-900">Settings page not found</h1>
+        </div>
+      );
+    }
+    const Icon = option.icon;
+    const preferenceKey = PREFERENCE_KEYS[option.id];
+    return (
+      <div className="mx-auto max-w-2xl p-5 md:p-8">
+        <Link to="/settings" className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-[#1a66ff]">
+          <ChevronLeft className="size-4" /> All settings
+        </Link>
+        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <div className="flex items-center gap-3">
+            <span className="grid size-11 place-items-center rounded-xl bg-blue-50 text-[#1a66ff]">
+              <Icon className="size-5" />
+            </span>
+            <div>
+              <h1 className="text-xl font-semibold text-slate-900">{option.title}</h1>
+              <p className="text-sm text-slate-500">{option.description}</p>
+            </div>
+          </div>
+          <p className="mt-5 text-sm leading-6 text-slate-600">{option.detail}</p>
+          {preferenceKey && (
+            <label className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm font-medium text-slate-700">
+              {option.id === 'notifications' ? 'Enable notifications' : 'Use compact conversations'}
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(event) => {
+                  const value = event.target.checked;
+                  setEnabled(value);
+                  localStorage.setItem(preferenceKey, String(value));
+                }}
+                className="size-5 accent-[#1a66ff]"
+              />
+            </label>
+          )}
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl p-5 md:p-8">
@@ -24,51 +142,27 @@ export default function Settings() {
         <h1 className="text-2xl font-semibold text-slate-900">Settings</h1>
         <p className="mt-1 text-sm text-slate-500">Personalise your inbox and conversation experience.</p>
       </div>
-
-      <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-        <Link to="/profile" className="flex items-center gap-3 p-4 hover:bg-slate-50">
-          <span className="grid size-12 place-items-center rounded-full bg-blue-100 text-lg font-semibold text-[#1a66ff]">
-            {(user?.name || 'Y').slice(0, 1).toUpperCase()}
-          </span>
-          <span className="min-w-0 flex-1">
-            <strong className="block truncate text-sm text-slate-800">{user?.name || 'Your profile'}</strong>
-            <span className="block truncate text-xs text-slate-500">{user?.phone}@phonemail.com</span>
-          </span>
-          <ChevronRight className="size-5 text-slate-400" />
-        </Link>
-      </section>
-
-      <div className="mt-5 space-y-3">
-        <SettingRow icon={Bell} title="Notifications" description="Get notified about new messages">
-          <button onClick={() => setNotifications((value) => !value)} className={`h-6 w-11 rounded-full p-1 transition ${notifications ? 'bg-[#1a66ff]' : 'bg-slate-300'}`}>
-            <span className={`block size-4 rounded-full bg-white transition ${notifications ? 'translate-x-5' : ''}`} />
-          </button>
-        </SettingRow>
-        <SettingRow icon={SlidersHorizontal} title="Compact conversations" description="Show more messages in the chat list">
-          <button onClick={() => setCompact((value) => !value)} className={`h-6 w-11 rounded-full p-1 transition ${compact ? 'bg-[#1a66ff]' : 'bg-slate-300'}`}>
-            <span className={`block size-4 rounded-full bg-white transition ${compact ? 'translate-x-5' : ''}`} />
-          </button>
-        </SettingRow>
-        <SettingRow icon={KeyRound} title="Password" description="Your password protects your PhoneMail account">
-          <span className="text-xs text-emerald-600">Available at login</span>
-        </SettingRow>
-        <SettingRow icon={Lock} title="Privacy" description="Your PhoneMail conversations are private" />
-        <SettingRow icon={Palette} title="Appearance" description="PhoneMail uses a light, WhatsApp-inspired theme" />
-        <SettingRow icon={ShieldCheck} title="Account security" description="Your phone number identifies your account" />
+      <div className="space-y-3">
+        {OPTIONS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.id}
+              to={`/settings/${item.id}`}
+              className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+            >
+              <span className="grid size-10 place-items-center rounded-xl bg-blue-50 text-[#1a66ff]">
+                <Icon className="size-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <strong className="block text-sm text-slate-800">{item.title}</strong>
+                <span className="text-xs text-slate-500">{item.description}</span>
+              </span>
+              <ChevronRight className="size-5 text-slate-400" />
+            </Link>
+          );
+        })}
       </div>
-      <button onClick={() => save({})} className="mt-5 text-sm font-medium text-[#1a66ff]">
-        {saved ? 'Saved' : 'Save preferences'}
-      </button>
-    </div>
-  );
-}
-
-function SettingRow({ icon: Icon, title, description, children }: { icon: typeof Bell; title: string; description: string; children?: ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-      <span className="grid size-10 place-items-center rounded-xl bg-blue-50 text-[#1a66ff]"><Icon className="size-5" /></span>
-      <span className="min-w-0 flex-1"><strong className="block text-sm text-slate-800">{title}</strong><span className="text-xs text-slate-500">{description}</span></span>
-      {children}
     </div>
   );
 }

@@ -19,22 +19,21 @@ export type OutboundEmail = {
   to: string[];
   subject: string;
   body: string;
+  attachments?: Array<{ filename: string; content: Buffer }>;
 };
 
 export async function sendOutboundEmail(email: OutboundEmail) {
   if (!transporter) {
-    console.log(`Demo email to ${email.to.join(', ')}: ${email.subject}`);
-    return { delivered: false, demo: true };
+    throw new Error('Email sending is not configured. Set SMTP_USER and SMTP_PASSWORD in the root .env file, then restart the API.');
   }
 
   await transporter.sendMail({
     from: env.smtpFrom || env.smtpUser,
-    to: email.to.map((recipient) => recipient.includes('@')
-      ? recipient
-      : `${recipient.replace(/\D/g, '')}@phonemail.com`).join(', '),
+    to: email.to.join(', '),
     subject: email.subject,
     text: email.body,
+    attachments: email.attachments?.map(({ filename, content }) => ({ filename, content })),
   });
 
-  return { delivered: true, demo: false };
+  return { delivered: true };
 }

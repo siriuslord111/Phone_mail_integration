@@ -16,15 +16,28 @@
       <form id="portal-form" class="portal-form">
         <label>
           Phone Number
-          <input type="tel" name="phoneNumber" value="9876543210" required />
+          <input type="tel" name="phoneNumber" autocomplete="tel" required />
         </label>
 
         <label>
           OTP
-          <input type="text" name="otp" placeholder="Enter OTP" />
+          <input type="text" name="otp" placeholder="Enter OTP" autocomplete="one-time-code" inputmode="numeric" />
         </label>
 
-        <button type="submit" class="primary">Create account</button>
+        <button type="submit" class="primary">Send OTP</button>
+      </form>
+      <button id="portal-password-mode" class="text-button" type="button">Use password instead</button>
+      <form id="portal-password-form" class="portal-form" hidden>
+        <label>
+          Password
+          <input type="password" name="password" minlength="8" maxlength="128" autocomplete="new-password" required />
+        </label>
+        <label id="portal-confirm-label">
+          Confirm Password
+          <input type="password" name="confirmPassword" minlength="8" maxlength="128" autocomplete="new-password" required />
+        </label>
+        <button type="submit" class="primary">Create account with password</button>
+        <button id="portal-password-toggle" class="text-button" type="button">Already have an account? Log in</button>
       </form>
 
       <p class="legal-line">By signing up, you agree to the <a href="#">Terms of Service</a>.</p>

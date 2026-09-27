@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Info, Plus, Star, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Info, Plus, Star } from 'lucide-react';
 import { MailList } from '../components/mail/MailList';
 import { ExpandedEmailView } from '../components/mail/ExpandedEmailView';
 import { ComposeBar } from '../components/chat/ComposeBar';
 import { MessageBubble } from '../components/chat/MessageBubble';
 import { ConversationProfilePanel } from '../components/chat/ConversationProfilePanel';
-import { Button } from '../components/common/Buttons';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useLayoutContext } from '../hooks/useLayoutContext';
 import {
   getMessages,
   listConversations,
-  lookupName,
   sendMessage,
   toggleFavourite,
   updateConversation,
@@ -35,11 +33,12 @@ export default function Dashboard() {
   const [params, setParams] = useSearchParams();
 
   const chatId = params.get('chat');
-  const composeMode = params.get('compose'); // '1' = new email, or a phone number for a locked reply-in-full-view
+  const composeMode = params.get('compose');
 
   const [filter, setFilter] = useState<MailFilter>('all');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  const compact = localStorage.getItem('phonemail_setting_compact_conversations') === 'true';
 
   const folder = FOLDER_BY_PATH[pathname] ?? 'Inbox';
 
@@ -55,7 +54,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [filter, search, pathname]);
+  }, [filter, search, pathname, composeMode]);
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === chatId) ?? null,
@@ -65,13 +64,6 @@ export default function Dashboard() {
   const openChat = (c: Conversation) => setParams({ chat: c.id });
   const closeChat = () => setParams({});
   const openCompose = (prefill?: string) => setParams((p) => ({ ...Object.fromEntries(p), compose: prefill || '1' }));
-  const closeCompose = () =>
-    setParams((p) => {
-      const next = Object.fromEntries(p);
-      delete next.compose;
-      return next;
-    });
-
   const refreshList = () => listConversations(filter, search).then(setConversations);
 
   return (
@@ -100,6 +92,7 @@ export default function Dashboard() {
           activeId={chatId ?? undefined}
           onOpen={openChat}
           search={search}
+          compact={compact}
         />
       </div>
 
@@ -121,16 +114,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {composeMode && (
-        <ComposeModal
-          lockedTo={composeMode !== '1' ? composeMode : undefined}
-          onClose={closeCompose}
-          onSent={() => {
-            closeCompose();
-            refreshList();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -322,141 +305,4 @@ function groupByDay(messages: Message[]): [string, Message[]][] {
     groups.set(key, [...(groups.get(key) ?? []), m]);
   }
   return Array.from(groups.entries());
-}
-
-// ── Traditional compose (also used for "reply in traditional view") ─
-
-interface ComposeModalProps {
-  /** A single phone number → To is pre-filled and locked (per the rulebook, inside a chat you can't add recipients). */
-  lockedTo?: string;
-  onClose: () => void;
-  onSent: () => void;
-}
-
-function ComposeModal({ lockedTo, onClose, onSent }: ComposeModalProps) {
-  const [to, setTo] = useState(lockedTo ? [lockedTo] : []);
-  const [toInput, setToInput] = useState('');
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-
-  const addRecipient = () => {
-    const digits = normalizePhone(toInput);
-    if (digits.length !== 10) {
-      setError('Enter a valid 10-digit PhoneMail number.');
-      return;
-    }
-    if (to.includes(digits)) {
-      setToInput('');
-      return;
-    }
-    setTo((prev) => [...prev, digits]);
-    setToInput('');
-    setError('');
-  };
-
-  const handleSend = async () => {
-    if (to.length === 0) {
-      setError('Add at least one recipient.');
-      return;
-    }
-    if (!body.trim()) {
-      setError('Write a message before sending.');
-      return;
-    }
-    setSending(true);
-    try {
-      await sendMessage({ to, subject: subject || undefined, body: body.trim() });
-      onSent();
-    } catch {
-      setError("Couldn't send. Please try again.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-white md:items-center md:justify-center md:bg-slate-900/40 md:backdrop-blur-sm">
-      <div className="anim-sheet flex h-full w-full flex-col md:h-auto md:max-h-[85vh] md:max-w-lg md:rounded-3xl md:shadow-2xl">
-        <header className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 pt-[max(env(safe-area-inset-top),0.75rem)] md:pt-3">
-          <h2 className="text-[15px] font-semibold text-slate-900">New email</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="grid size-9 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100"
-          >
-            <X className="size-5" />
-          </button>
-        </header>
-
-        <div className="flex-1 space-y-0 overflow-y-auto bg-white">
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-4 py-2.5">
-            <span className="text-sm text-slate-400">To</span>
-            {to.map((phone) => (
-              <span
-                key={phone}
-                className="flex items-center gap-1 rounded-full bg-blue-50 py-1 pl-2.5 pr-1.5 text-sm text-[#0b4fe0]"
-              >
-                {lookupName(phone)}
-                {!lockedTo && (
-                  <button
-                    onClick={() => setTo((prev) => prev.filter((p) => p !== phone))}
-                    aria-label={`Remove ${phone}`}
-                    className="grid size-4 place-items-center rounded-full hover:bg-blue-100"
-                  >
-                    <X className="size-2.5" />
-                  </button>
-                )}
-              </span>
-            ))}
-            {!lockedTo && (
-              <input
-                value={toInput}
-                onChange={(e) => setToInput(e.target.value.replace(/[^\d+]/g, ''))}
-                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addRecipient())}
-                onBlur={addRecipient}
-                placeholder="Phone number"
-                className="min-w-[8rem] flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
-              />
-            )}
-          </div>
-
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="Subject"
-            className="w-full border-b border-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 outline-none placeholder:text-slate-400"
-          />
-
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Write your message…"
-            rows={10}
-            className="w-full resize-none px-4 py-3 text-[15px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400"
-          />
-
-          {error && <p className="px-4 pb-2 text-sm text-rose-600">{error}</p>}
-        </div>
-
-        <footer className="flex shrink-0 items-center justify-between border-t border-slate-100 px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
-          <button
-            onClick={() => {
-              setTo([]);
-              setSubject('');
-              setBody('');
-            }}
-            aria-label="Discard"
-            className="grid size-10 place-items-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
-          >
-            <Trash2 className="size-5" />
-          </button>
-          <Button loading={sending} onClick={handleSend}>
-            Send
-          </Button>
-        </footer>
-      </div>
-    </div>
-  );
 }
