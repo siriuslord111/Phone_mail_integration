@@ -368,7 +368,8 @@ export default function MainLayout() {
 
       {composeMode && (
         <ComposeModal
-          lockedTo={composeMode !== '1' ? composeMode : undefined}
+          lockedTo={composeMode !== '1' && !composeMode.startsWith('draft:') ? composeMode : undefined}
+          draftId={composeMode.startsWith('draft:') ? composeMode.slice('draft:'.length) : undefined}
           onClose={closeCompose}
           onSent={closeCompose}
         />

@@ -11,12 +11,18 @@ datasource db {
 model User {
   id            String         @id @default(uuid())
   phoneNumber   String         @unique
-  passwordHash  String?        // Argon2id hash for password fallback accounts
-  aliasIds      String[]       // Manage alias IDs in settings[cite: 1]
+  email         String         @unique
+  passwordHash  String? // Argon2id hash for password fallback accounts
+  aliasIds      String[]       @default([])
   language      String         @default("en")
   profilePic    String?
+  name          String?
+  bio           String?
   hasMobileApp  Boolean        @default(false) // Used to determine if SMS notifications are needed[cite: 1]
   conversations Conversation[]
+  inboundEmails InboundEmail[]
+  mailMessages  MailMessage[]
+  drafts        MailDraft[]
   createdAt     DateTime       @default(now())
 }
 
@@ -24,7 +30,7 @@ model Conversation {
   id           String    @id @default(uuid())
   userId       String
   user         User      @relation(fields: [userId], references: [id])
-  contactEmail String    // The other party in the 1-to-1 or group chat
+  contactEmail String // The other party in the 1-to-1 or group chat
   isGroup      Boolean   @default(false)
   messages     Message[]
   updatedAt    DateTime  @updatedAt
@@ -34,12 +40,62 @@ model Message {
   id             String       @id @default(uuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id])
-  subject        String       // Compact Subject field[cite: 1]
+  subject        String // Compact Subject field[cite: 1]
   body           String
-  isIncoming     Boolean      // True if received, False if sent (Unified inbox/sent[cite: 1])
+  isIncoming     Boolean // True if received, False if sent (Unified inbox/sent[cite: 1])
   isRead         Boolean      @default(false)
   isFavorited    Boolean      @default(false)
   hasAttachments Boolean      @default(false)
-  replyToId      String?      // Links to original email[cite: 1]
+  replyToId      String? // Links to original email[cite: 1]
   createdAt      DateTime     @default(now())
+}
+
+model InboundEmail {
+  id                String   @id @default(uuid())
+  providerMessageId String
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromAddress       String
+  toAddress         String
+  subject           String
+  body              String
+  receivedAt        DateTime
+  mailbox           String   @default("inbox")
+  isRead            Boolean  @default(false)
+  isStarred         Boolean  @default(false)
+
+  @@unique([providerMessageId, userId])
+  @@index([userId, receivedAt])
+}
+
+model MailMessage {
+  id          String   @id @default(uuid())
+  messageId   String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  peerAddress String
+  fromAddress String
+  toAddress   String
+  subject     String
+  body        String
+  direction   String
+  mailbox     String   @default("inbox")
+  isRead      Boolean  @default(false)
+  isStarred   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId, peerAddress, createdAt])
+}
+
+model MailDraft {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipients String[]
+  subject    String   @default("")
+  body       String   @default("")
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, updatedAt])
 }

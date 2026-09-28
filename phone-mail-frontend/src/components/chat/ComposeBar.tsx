@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { Paperclip, Send, X } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { Message } from '../../types';
 
 interface ComposeBarProps {
-  /** Hidden for a brand-new email (subject shown instead); visible once the thread has a subject. */
+  /** Show the subject input for a new email in this conversation. */
   showSubject: boolean;
   subject: string;
   onSubjectChange: (v: string) => void;
@@ -29,14 +29,10 @@ export function ComposeBar({
 }: ComposeBarProps) {
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const [subjectOpen, setSubjectOpen] = useState(Boolean(subject));
+  const [subjectOpen, setSubjectOpen] = useState(showSubject);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canSend = body.trim().length > 0 && !sending;
-
-  useEffect(() => {
-    if (subject) setSubjectOpen(true);
-  }, [subject]);
 
   const handleSend = () => {
     if (!canSend) return;
@@ -127,13 +123,12 @@ export function ComposeBar({
 
         <div
           className="flex-1 rounded-3xl bg-slate-100 px-4 py-2.5"
-          onClick={() => !replyTarget && setSubjectOpen(true)}
         >
           <textarea
             rows={1}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            onFocus={() => !replyTarget && setSubjectOpen(true)}
+            onFocus={() => !replyTarget && !subjectOpen && setSubjectOpen(true)}
             onKeyDown={handleKeyDown}
             placeholder="Message"
             className="max-h-28 w-full resize-none bg-transparent text-[15px] text-slate-800 outline-none placeholder:text-slate-400"

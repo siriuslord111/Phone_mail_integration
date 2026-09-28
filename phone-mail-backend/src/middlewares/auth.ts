@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
 
-import { users } from '../store';
+import { findAccountBySession } from '../services/account.service';
 import { verifySessionToken } from '../services/session.service';
 
 export const requireAuth: RequestHandler = (req, res, next) => {
@@ -11,13 +11,16 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   }
 
   const session = verifySessionToken(token);
-  const user = session && users.find(
-    (entry) => entry.id === session.sub && entry.phoneNumber === session.phone,
-  );
-  if (!user) {
+  if (!session) {
     return res.status(401).json({ success: false, message: 'Your session is invalid or expired. Sign in again.' });
   }
 
-  res.locals.authenticatedUser = user;
-  return next();
+  void findAccountBySession(session.sub, session.phone).then((user) => {
+    if (!user) {
+      res.status(401).json({ success: false, message: 'Your session is invalid or expired. Sign in again.' });
+      return;
+    }
+    res.locals.authenticatedUser = user;
+    next();
+  }).catch(next);
 };

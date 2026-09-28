@@ -1,13 +1,22 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
-import app from '../app';
-import { users } from '../store';
+import type { Express } from 'express';
+import type { User } from '../store';
 
 let baseUrl: string;
-let server: ReturnType<typeof app.listen>;
+let app: Express;
+let users: User[];
+let server: ReturnType<Express['listen']>;
 
 before(async () => {
+  process.env.PHONEMAIL_STORAGE_MODE = 'memory';
+  const [{ default: application }, store] = await Promise.all([
+    import('../app'),
+    import('../store'),
+  ]);
+  app = application;
+  users = store.users;
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -16,6 +25,7 @@ before(async () => {
 });
 
 after(async () => {
+  if (!server) return;
   await new Promise<void>((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });
@@ -35,6 +45,13 @@ test('password registration hashes credentials and issues an authenticated sessi
   assert.ok(registration.token);
   assert.equal('password' in registration.user, false);
   assert.equal(users.find((user) => user.phoneNumber.endsWith(phone))?.passwordHash?.startsWith('$argon2id$'), true);
+
+  const duplicateRegistrationResponse = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone: `+91${phone}`, password, client: 'web' }),
+  });
+  assert.equal(duplicateRegistrationResponse.status, 409);
 
   const wrongPasswordResponse = await fetch(`${baseUrl}/api/auth/login-password`, {
     method: 'POST',

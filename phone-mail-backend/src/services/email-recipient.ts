@@ -1,3 +1,5 @@
+import { normalizePhone } from '../store';
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function normalizeRecipients(input: unknown): string[] {
@@ -15,7 +17,7 @@ export function normalizeRecipients(input: unknown): string[] {
     if (!/^\+?[\d\s()-]+$/.test(value)) {
       throw new Error(`Invalid recipient: ${value}`);
     }
-    const phone = value.replace(/\D/g, '');
+    const phone = normalizePhone(value).replace(/\D/g, '');
     if (phone.length < 10 || phone.length > 15) {
       throw new Error('Phone number recipients must contain 10 to 15 digits.');
     }

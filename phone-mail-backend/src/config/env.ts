@@ -26,4 +26,6 @@ export const env = {
   smtpUser: process.env.SMTP_USER ?? '',
   smtpPassword: process.env.SMTP_PASSWORD ?? '',
   smtpFrom: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? '',
+  mailpitApiUrl: process.env.MAILPIT_API_URL ?? '',
+  mailpitPollIntervalMs: Number(process.env.MAILPIT_POLL_INTERVAL_MS ?? 5000),
 };

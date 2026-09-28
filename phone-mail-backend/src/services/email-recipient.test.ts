@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { normalizeRecipients } from './email-recipient';
+import { normalizePhone } from '../store';
 
 test('normalizes phone recipients and preserves real email addresses', () => {
   assert.deepEqual(
-    normalizeRecipients(['9876543210', 'Person@example.com']),
-    ['9876543210@phonemail.com', 'person@example.com'],
+    normalizeRecipients(['9876543210', 'Person@example.com', '+919876543210']),
+    ['919876543210@phonemail.com', 'person@example.com'],
   );
+  assert.equal(normalizePhone('09876543210'), '+919876543210');
+  assert.equal(normalizePhone('+919876543210'), '+919876543210');
 });
 
 test('rejects invalid recipients and recipient counts', () => {

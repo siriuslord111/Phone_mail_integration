@@ -1,4 +1,4 @@
-import type { Conversation, MailFilter, Message, MessageAction, SendPayload } from '../types';
+import type { Conversation, Folder, MailFilter, Message, MessageAction, SendPayload } from '../types';
 import { DEMO_MODE, api, demoDelay } from './axios';
 import { CONTACTS, ME, MOCK_CONVERSATIONS, MOCK_MESSAGES } from './mock.data';
 
@@ -7,32 +7,92 @@ let demoConversations = MOCK_CONVERSATIONS.map((c) => ({ ...c }));
 let demoMessages: Record<string, Message[]> = Object.fromEntries(
   Object.entries(MOCK_MESSAGES).map(([id, msgs]) => [id, [...msgs]]),
 );
+export interface MailDraft {
+  id: string;
+  recipients: string[];
+  subject: string;
+  body: string;
+  updatedAt: string;
+}
+let demoDrafts: MailDraft[] = [];
 
 function persistDemoMail() {
   sessionStorage.setItem('phonemail_demo_mail', JSON.stringify({ conversations: demoConversations, messages: demoMessages }));
 }
 
 /** GET /conversations?filter=&q= */
-export async function listConversations(filter: MailFilter = 'all', query = ''): Promise<Conversation[]> {
+export async function listConversations(filter: MailFilter = 'all', query = '', folder: Folder = 'inbox'): Promise<Conversation[]> {
   if (DEMO_MODE) {
     await demoDelay(300);
     const q = query.trim().toLowerCase();
-    return demoConversations
+    const conversations = folder === 'drafts' ? [] : demoConversations
       .filter((c) => {
-        if (filter === 'unread' && c.unreadCount === 0) return false;
-        if (filter === 'favourites' && !c.isFavourite) return false;
-        if (filter === 'attachments' && !c.hasAttachments) return false;
+        const mail = demoMessages[c.id] ?? [];
+        const mailbox = folder === 'inbox' ? ['inbox', 'sent'] : [folder];
+        return mail.some((message) => mailbox.includes(message.mailbox ?? (message.direction === 'out' ? 'sent' : 'inbox')));
+      })
+      .map((conversation) => {
+        const mailbox = folder === 'inbox' ? ['inbox', 'sent'] : [folder];
+        const messages = (demoMessages[conversation.id] ?? []).filter((message) =>
+          mailbox.includes(message.mailbox ?? (message.direction === 'out' ? 'sent' : 'inbox')),
+        );
+        const latest = messages.reduce((current, message) =>
+          message.createdAt > current.createdAt ? message : current,
+        );
+        return {
+          ...conversation,
+          lastMessage: {
+            preview: latest.body,
+            subject: latest.subject,
+            createdAt: latest.createdAt,
+            hasAttachment: Boolean(latest.attachments?.length),
+            direction: latest.direction,
+          },
+          unreadCount: messages.filter((message) => message.direction === 'in' && !message.read).length,
+          isFavourite: messages.some((message) => message.isStarred),
+          hasAttachments: messages.some((message) => Boolean(message.attachments?.length)),
+        };
+      })
+      .filter((conversation) => {
+        if (filter === 'unread' && conversation.unreadCount === 0) return false;
+        if (filter === 'favourites' && !conversation.isFavourite) return false;
+        if (filter === 'attachments' && !conversation.hasAttachments) return false;
         if (!q) return true;
         return (
-          c.title.toLowerCase().includes(q) ||
-          c.participants.some((p) => p.phone.includes(q) || p.name.toLowerCase().includes(q))
+          conversation.title.toLowerCase().includes(q) ||
+          conversation.participants.some((p) => p.phone.includes(q) || p.name.toLowerCase().includes(q))
         );
       })
       .sort((a, b) => +new Date(b.lastMessage.createdAt) - +new Date(a.lastMessage.createdAt));
+    return conversations;
   }
 
-  const { data } = await api.get('/conversations', { params: { filter, q: query || undefined } });
+  const { data } = await api.get('/conversations', { params: { filter, q: query || undefined, folder } });
   return data.conversations ?? data;
+}
+
+export async function listDrafts(): Promise<MailDraft[]> {
+  if (DEMO_MODE) return demoDrafts;
+  const { data } = await api.get('/drafts');
+  return data.drafts;
+}
+
+export async function saveDraft(draft: Partial<MailDraft> & Pick<MailDraft, 'recipients' | 'subject' | 'body'>): Promise<MailDraft> {
+  if (DEMO_MODE) {
+    const saved = { ...draft, id: draft.id ?? `draft-${Date.now()}`, updatedAt: new Date().toISOString() };
+    demoDrafts = [saved, ...demoDrafts.filter((item) => item.id !== saved.id)];
+    return saved;
+  }
+  const { data } = await api.post('/drafts', draft);
+  return data.draft;
+}
+
+export async function deleteDraft(id: string): Promise<void> {
+  if (DEMO_MODE) {
+    demoDrafts = demoDrafts.filter((draft) => draft.id !== id);
+    return;
+  }
+  await api.delete(`/drafts/${id}`);
 }
 
 export async function updateMessage(messageId: string, action: MessageAction): Promise<Message> {

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Info, Plus, Star } from 'lucide-react';
+import { ArrowLeft, Info, Star } from 'lucide-react';
 import { MailList } from '../components/mail/MailList';
 import { ExpandedEmailView } from '../components/mail/ExpandedEmailView';
 import { ComposeBar } from '../components/chat/ComposeBar';
@@ -11,20 +11,29 @@ import { useLayoutContext } from '../hooks/useLayoutContext';
 import {
   getMessages,
   listConversations,
+  listDrafts,
   sendMessage,
   toggleFavourite,
   updateConversation,
   updateMessage,
 } from '../api/email.api';
 import { formatDay, getInitials, avatarColor, normalizePhone } from '../utils/formatters';
-import type { Conversation, MailFilter, Message } from '../types';
+import type { Conversation, Folder, MailFilter, Message } from '../types';
+import type { MailDraft } from '../api/email.api';
 
-const FOLDER_BY_PATH: Record<string, string> = {
-  '/': 'Inbox',
-  '/sent': 'Sent',
-  '/drafts': 'Drafts',
-  '/spam': 'Spam',
-  '/trash': 'Trash',
+const FOLDER_BY_PATH: Record<string, Folder> = {
+  '/': 'inbox',
+  '/sent': 'sent',
+  '/drafts': 'drafts',
+  '/spam': 'spam',
+  '/trash': 'trash',
+};
+const FOLDER_LABELS: Record<Folder, string> = {
+  inbox: 'Inbox',
+  sent: 'Sent',
+  drafts: 'Drafts',
+  spam: 'Spam',
+  trash: 'Trash',
 };
 
 export default function Dashboard() {
@@ -37,15 +46,22 @@ export default function Dashboard() {
 
   const [filter, setFilter] = useState<MailFilter>('all');
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [drafts, setDrafts] = useState<MailDraft[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const compact = localStorage.getItem('phonemail_setting_compact_conversations') === 'true';
 
-  const folder = FOLDER_BY_PATH[pathname] ?? 'Inbox';
+  const folder = FOLDER_BY_PATH[pathname] ?? 'inbox';
 
   useEffect(() => {
     let cancelled = false;
     setListLoading(true);
-    listConversations(filter, search).then((data) => {
+    const load = folder === 'drafts'
+      ? listDrafts().then((items) => {
+          if (!cancelled) setDrafts(items);
+          return [] as Conversation[];
+        })
+      : listConversations(filter, search, folder);
+    load.then((data) => {
       if (!cancelled) {
         setConversations(data);
         setListLoading(false);
@@ -54,7 +70,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [filter, search, pathname, composeMode]);
+  }, [filter, search, pathname, composeMode, folder]);
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === chatId) ?? null,
@@ -64,7 +80,10 @@ export default function Dashboard() {
   const openChat = (c: Conversation) => setParams({ chat: c.id });
   const closeChat = () => setParams({});
   const openCompose = (prefill?: string) => setParams((p) => ({ ...Object.fromEntries(p), compose: prefill || '1' }));
-  const refreshList = () => listConversations(filter, search).then(setConversations);
+  const refreshList = useCallback(
+    () => listConversations(filter, search, folder).then(setConversations),
+    [filter, folder, search],
+  );
 
   return (
     <div className="flex h-full min-h-0">
@@ -75,25 +94,26 @@ export default function Dashboard() {
         }`}
       >
         <div className="hidden items-center justify-between px-5 pt-4 md:flex">
-          <h1 className="text-xl font-semibold text-slate-900">{folder}</h1>
-          <button
-            onClick={() => openCompose()}
-            aria-label="New email"
-            className="grid size-9 place-items-center rounded-full text-[#1a66ff] transition hover:bg-blue-50"
-          >
-            <Plus className="size-5" />
-          </button>
+          <h1 className="text-xl font-semibold text-slate-900">{FOLDER_LABELS[folder]}</h1>
         </div>
-        <MailList
-          conversations={conversations}
-          loading={listLoading}
-          filter={filter}
-          onFilterChange={setFilter}
-          activeId={chatId ?? undefined}
-          onOpen={openChat}
-          search={search}
-          compact={compact}
-        />
+        {folder === 'drafts' ? (
+          <DraftList
+            drafts={drafts}
+            loading={listLoading}
+            onOpen={(draft) => openCompose(`draft:${draft.id}`)}
+          />
+        ) : (
+          <MailList
+            conversations={conversations}
+            loading={listLoading}
+            filter={filter}
+            onFilterChange={setFilter}
+            activeId={chatId ?? undefined}
+            onOpen={openChat}
+            search={search}
+            compact={compact}
+          />
+        )}
       </div>
 
       {/* ── Chat / reading pane ────────────────────────────────────── */}
@@ -108,6 +128,7 @@ export default function Dashboard() {
               refreshList();
             }}
             onComposeTraditional={(phone) => openCompose(phone)}
+            onRead={refreshList}
           />
         ) : (
           <EmptyPane />
@@ -115,6 +136,35 @@ export default function Dashboard() {
       </div>
 
     </div>
+  );
+}
+
+function DraftList({ drafts, loading, onOpen }: {
+  drafts: MailDraft[];
+  loading: boolean;
+  onOpen: (draft: MailDraft) => void;
+}) {
+  if (loading) return <div className="flex-1"><LoadingSpinner label="Loading drafts…" /></div>;
+  if (drafts.length === 0) return (
+    <div className="grid flex-1 place-items-center text-sm text-slate-400">No saved drafts</div>
+  );
+  return (
+    <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto">
+      {drafts.map((draft) => (
+        <li key={draft.id}>
+          <button
+            onClick={() => onOpen(draft)}
+            className="w-full px-5 py-4 text-left transition hover:bg-slate-50"
+          >
+            <p className="truncate text-sm font-medium text-slate-800">
+              {draft.recipients.length ? `To: ${draft.recipients.join(', ')}` : 'No recipient'}
+            </p>
+            <p className="mt-1 truncate text-sm text-slate-600">{draft.subject || '(no subject)'}</p>
+            <p className="mt-1 truncate text-xs text-slate-400">{draft.body || 'Empty draft'}</p>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -139,9 +189,10 @@ interface ChatPanelProps {
   onBack: () => void;
   onFavouriteToggle: (next: boolean) => void;
   onComposeTraditional: (lockedPhone: string) => void;
+  onRead: () => void;
 }
 
-function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTraditional }: ChatPanelProps) {
+function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTraditional, onRead }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
@@ -157,16 +208,15 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
     setLoading(true);
     getMessages(conversation.id).then((data) => {
       setMessages(data);
-      setSubject(data.find((m) => m.subject)?.subject ?? '');
+      setSubject('');
       setLoading(false);
+      onRead();
     });
-  }, [conversation.id]);
+  }, [conversation.id, onRead]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages, loading]);
-
-  const hasSubject = messages.some((m) => m.subject) || subject.length > 0;
 
   const handleSend = async (body: string, files: File[]) => {
     setSending(true);
@@ -274,6 +324,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
                       } else {
                         setMessages((prev) => prev.map((item) => item.id === updated.id ? { ...item, ...updated } : item));
                       }
+                      onRead();
                     }}
                   />
                 ))}
@@ -285,7 +336,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
       </div>
 
       <ComposeBar
-        showSubject={!replyTarget && !hasSubject}
+        showSubject={!replyTarget}
         subject={subject}
         onSubjectChange={setSubject}
         replyTarget={replyTarget}

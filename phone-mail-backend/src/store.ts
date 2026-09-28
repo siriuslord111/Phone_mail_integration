@@ -24,6 +24,8 @@ export type Message = {
   body: string;
   createdAt: string;
   read: boolean;
+  mailbox?: 'inbox' | 'sent' | 'spam' | 'trash';
+  isStarred?: boolean;
 };
 
 export const users: User[] = [];
@@ -31,8 +33,10 @@ export const messages: Message[] = [];
 export const otpStore = new Map<string, OtpChallenge>();
 
 export function normalizePhone(phone: string) {
-  const digits = phone.replace(/\D/g, '');
+  let digits = phone.replace(/\D/g, '');
   if (!digits) return '';
+  if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  if (digits.length === 13 && digits.startsWith('091')) digits = digits.slice(1);
   return digits.length === 10 ? `+91${digits}` : `+${digits}`;
 }
 

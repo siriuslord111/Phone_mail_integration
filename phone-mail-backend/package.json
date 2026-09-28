@@ -8,9 +8,11 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc --project tsconfig.json",
     "test": "tsx --test src/services/*.test.ts src/routes/*.test.ts",
-    "start": "node dist/server.js"
+    "db:push": "prisma db push",
+    "start": "prisma db push --skip-generate && node dist/server.js"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.1",
     "@node-rs/argon2": "^2.2.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -26,6 +28,7 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^22.10.2",
     "@types/nodemailer": "^6.4.16",
+    "prisma": "^6.19.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

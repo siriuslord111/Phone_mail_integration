@@ -1,9 +1,11 @@
 import { Router } from 'express';
 
-import { addMessage, messages, normalizePhone, users } from '../store';
+import { addMessage, messages, normalizePhone } from '../store';
 import { TwilioService } from '../services/twilio.service';
-import { sendOutboundEmail } from '../services/email.service';
+import { findAccountByEmail } from '../services/account.service';
+import { normalizeRecipients } from '../services/email-recipient';
 import { requireAuth } from '../middlewares/auth';
+import { CannotSendToSelfError, deliverEmail, LocalAttachmentNotSupportedError, UnknownPhoneMailRecipientError } from '../services/email-delivery.service';
 
 const router = Router();
 router.use(requireAuth);
@@ -34,46 +36,66 @@ router.get('/conversation', (req, res) => {
 router.post('/send', async (req, res) => {
   const { to, subject, body } = req.body ?? {};
   const sender = res.locals.authenticatedUser.phoneNumber;
-  const rawRecipients = Array.isArray(to) ? to.map((value) => String(value)) : [String(to ?? '')];
-  const recipients = rawRecipients
-    .filter((value) => value.trim().length > 0)
-    .map((value) => normalizePhone(value));
+  let recipients: string[];
+  try {
+    recipients = normalizeRecipients(to);
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Invalid recipient.',
+    });
+  }
 
-  if (!sender || !recipients.length || !body) {
+  if (!sender || typeof body !== 'string' || !body.trim()) {
     return res.status(400).json({ success: false, message: 'Sender, recipient and body are required.' });
   }
 
-  const saved = addMessage({
-    from: sender,
-    to: recipients,
-    subject: String(subject ?? 'New message'),
-    body: String(body),
-  });
-
+  const emailSubject = String(subject ?? 'New message');
   let delivery;
   try {
-    delivery = await sendOutboundEmail({
-      from: sender,
-      to: recipients,
-      subject: saved.subject,
-      body: saved.body,
+    delivery = await deliverEmail({
+      sender: res.locals.authenticatedUser,
+      recipients,
+      subject: emailSubject,
+      body: body.trim(),
     });
   } catch (error) {
+    if (
+      error instanceof UnknownPhoneMailRecipientError ||
+      error instanceof LocalAttachmentNotSupportedError ||
+      error instanceof CannotSendToSelfError
+    ) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     console.error('SMTP delivery failed:', error);
     return res.status(502).json({
       success: false,
-      message: 'The message was saved, but SMTP delivery failed. Check SMTP host, port, and credentials.',
-      storedMessageId: saved.id,
+      message: error instanceof Error && error.message.startsWith('Email sending is not configured.')
+        ? error.message
+        : 'The email could not be sent. Check SMTP settings and the recipient address, then try again.',
     });
   }
 
   for (const recipient of recipients) {
-    const user = users.find((entry) => entry.phoneNumber === recipient);
+    const user = await findAccountByEmail(recipient);
     if (user && !user.hasMobileApp) {
-      await TwilioService.sendEmailNotificationSMS(recipient, sender, saved.subject);
+      await TwilioService.sendEmailNotificationSMS(user.phoneNumber, sender, emailSubject);
     }
   }
 
+  if (delivery.externalRecipients > 0) {
+    const externalRecipients = recipients.filter((recipient) => !recipient.endsWith('@phonemail.com'));
+    addMessage({ from: sender, to: externalRecipients, subject: emailSubject, body: body.trim() });
+  }
+  const saved = {
+    id: `delivery-${Date.now()}`,
+    from: sender,
+    to: recipients,
+    subject: emailSubject,
+    body: body.trim(),
+    createdAt: new Date().toISOString(),
+    read: false,
+  };
   return res.status(201).json({ success: true, message: saved, delivery });
 });
 

@@ -3,11 +3,13 @@ import { Router, type Request, type Response } from 'express';
 
 import { env } from '../config/env';
 import { loginRateLimit, otpSendRateLimit } from '../middlewares/login-rate-limit';
-import { ensureUser, normalizePhone, otpStore, users } from '../store';
+import { normalizePhone, otpStore } from '../store';
+import { AccountAlreadyExistsError, createAccount, findAccountByPhone } from '../services/account.service';
 import { OtpProviderError, sendOtp } from '../services/otp.service';
 import { hashPassword, verifyPassword } from '../services/password.service';
 import { createSessionToken } from '../services/session.service';
 import { TwilioService } from '../services/twilio.service';
+import type { User } from '../store';
 
 const router = Router();
 const OTP_LIFETIME_MS = 5 * 60 * 1000;
@@ -19,7 +21,7 @@ function validPhone(phone: string) {
   return /^\+\d{8,15}$/.test(phone);
 }
 
-function toUser(user: ReturnType<typeof ensureUser>) {
+function toUser(user: User) {
   return {
     id: user.id,
     phone: user.phoneNumber.replace(/^\+91/, ''),
@@ -31,7 +33,7 @@ function toUser(user: ReturnType<typeof ensureUser>) {
   };
 }
 
-function issueSession(res: Response, user: ReturnType<typeof ensureUser>, isNewUser: boolean) {
+function issueSession(res: Response, user: User, isNewUser: boolean) {
   return res.json({
     success: true,
     token: createSessionToken(user.id, user.phoneNumber),
@@ -95,15 +97,23 @@ async function registerWithPassword(req: Request, res: Response) {
       message: `Password must be between ${PASSWORD_MIN_LENGTH} and ${PASSWORD_MAX_LENGTH} characters.`,
     });
   }
-  if (users.some((user) => user.phoneNumber === phone)) {
-    return res.status(409).json({ success: false, message: 'An account already exists for this phone number.' });
+  if (await findAccountByPhone(phone)) {
+    return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
   }
 
   const passwordHash = await hashPassword(password);
-  if (users.some((user) => user.phoneNumber === phone)) {
-    return res.status(409).json({ success: false, message: 'An account already exists for this phone number.' });
+  if (await findAccountByPhone(phone)) {
+    return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
   }
-  const user = ensureUser(phone, passwordHash, req.body?.client === 'mobile');
+  let user: User;
+  try {
+    user = await createAccount(phone, passwordHash, req.body?.client === 'mobile');
+  } catch (error) {
+    if (error instanceof AccountAlreadyExistsError) {
+      return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
+    }
+    throw error;
+  }
   return res.status(201).json({
     success: true,
     token: createSessionToken(user.id, user.phoneNumber),
@@ -116,14 +126,18 @@ async function registerWithPassword(req: Request, res: Response) {
 router.post('/register', loginRateLimit, (req: Request, res: Response, next) => {
   void registerWithPassword(req, res).catch(next);
 });
-router.post('/login', loginRateLimit, (req: Request, res: Response) => passwordLogin(req, res));
-router.post('/login-password', loginRateLimit, (req: Request, res: Response) => passwordLogin(req, res));
+router.post('/login', loginRateLimit, (req: Request, res: Response, next) => {
+  void passwordLogin(req, res).catch(next);
+});
+router.post('/login-password', loginRateLimit, (req: Request, res: Response, next) => {
+  void passwordLogin(req, res).catch(next);
+});
 
 async function passwordLogin(req: Request, res: Response) {
   const phone = validateCredentials(req.body?.phoneNumber ?? req.body?.phone, res);
   if (!phone) return;
 
-  const user = users.find((entry) => entry.phoneNumber === phone);
+  const user = await findAccountByPhone(phone);
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
   const passwordMatches = password.length <= PASSWORD_MAX_LENGTH
     && await verifyPassword(password, user?.passwordHash);
@@ -161,11 +175,15 @@ function verifyChallenge(phone: string, suppliedOtp: unknown, purpose: 'login' |
   return true;
 }
 
-router.post('/verify-otp', loginRateLimit, (req: Request, res: Response) => {
+router.post('/verify-otp', loginRateLimit, (req: Request, res: Response, next) => {
+  void verifyOtpLogin(req, res).catch(next);
+});
+
+async function verifyOtpLogin(req: Request, res: Response) {
   const phone = validateCredentials(req.body?.phoneNumber ?? req.body?.phone, res);
   if (!phone || !verifyChallenge(phone, req.body?.otp, 'login', res)) return;
 
-  const user = users.find((entry) => entry.phoneNumber === phone);
+  const user = await findAccountByPhone(phone);
   if (!user) {
     return res.status(404).json({
       success: false,
@@ -173,16 +191,28 @@ router.post('/verify-otp', loginRateLimit, (req: Request, res: Response) => {
     });
   }
   return issueSession(res, user, false);
+}
+
+router.post('/register-otp', loginRateLimit, (req: Request, res: Response, next) => {
+  void registerWithOtp(req, res).catch(next);
 });
 
-router.post('/register-otp', loginRateLimit, (req: Request, res: Response) => {
+async function registerWithOtp(req: Request, res: Response) {
   const phone = validateCredentials(req.body?.phoneNumber ?? req.body?.phone, res);
   if (!phone || !verifyChallenge(phone, req.body?.otp, 'register', res)) return;
-  if (users.some((entry) => entry.phoneNumber === phone)) {
-    return res.status(409).json({ success: false, message: 'An account already exists for this phone number.' });
+  if (await findAccountByPhone(phone)) {
+    return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
   }
 
-  const user = ensureUser(phone, undefined, req.body?.client === 'mobile');
+  let user: User;
+  try {
+    user = await createAccount(phone, undefined, req.body?.client === 'mobile');
+  } catch (error) {
+    if (error instanceof AccountAlreadyExistsError) {
+      return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
+    }
+    throw error;
+  }
   return res.status(201).json({
     success: true,
     token: createSessionToken(user.id, user.phoneNumber),
@@ -190,7 +220,7 @@ router.post('/register-otp', loginRateLimit, (req: Request, res: Response) => {
     user: toUser(user),
     message: 'Account created successfully.',
   });
-});
+}
 
 router.post('/ivr/incoming', (req: Request, res: Response) => {
   const twiml = TwilioService.generateIVRMenu();

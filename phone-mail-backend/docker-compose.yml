@@ -1,4 +1,15 @@
 services:
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+    volumes:
+      - mailpitdata:/data
+    environment:
+      MP_DATABASE: /data/mailpit.db
+
   db:
     image: postgres:15-alpine
     restart: unless-stopped
@@ -10,6 +21,11 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d phonemail"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   api:
     build: .
@@ -29,10 +45,16 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      MAILPIT_API_URL: http://mailpit:8025
+      MAILPIT_POLL_INTERVAL_MS: ${MAILPIT_POLL_INTERVAL_MS:-5000}
     ports:
       - "3000:3000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
 
 volumes:
   pgdata:
+  mailpitdata:

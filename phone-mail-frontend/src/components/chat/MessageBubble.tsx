@@ -160,15 +160,30 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
               <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'star'); }}>
                 <Star className="size-3.5" /> {message.isStarred ? 'Unstar' : 'Star'}
               </button>
-              <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'markRead'); }}>
-                <CheckCheck className="size-3.5" /> Mark as read
-              </button>
-              <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, message.mailbox === 'spam' ? 'restore' : 'spam'); }}>
-                <Flag className="size-3.5" /> {message.mailbox === 'spam' ? 'Move to inbox' : 'Move to spam'}
-              </button>
-              <button className="menu-action text-rose-600" onClick={() => { setMenuOpen(false); onAction(message, 'trash'); }}>
-                <Trash2 className="size-3.5" /> Move to trash
-              </button>
+              {message.direction === 'in' && !message.read && (
+                <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'markRead'); }}>
+                  <CheckCheck className="size-3.5" /> Mark as read
+                </button>
+              )}
+              {message.mailbox !== 'inbox' && message.mailbox !== 'sent' && (
+                <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'restore'); }}>
+                  <Flag className="size-3.5" /> Move to inbox
+                </button>
+              )}
+              {message.mailbox !== 'spam' && message.mailbox !== 'trash' && (
+                <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'spam'); }}>
+                  <Flag className="size-3.5" /> Move to spam
+                </button>
+              )}
+              {message.mailbox !== 'trash' ? (
+                <button className="menu-action text-rose-600" onClick={() => { setMenuOpen(false); onAction(message, 'trash'); }}>
+                  <Trash2 className="size-3.5" /> Move to trash
+                </button>
+              ) : (
+                <button className="menu-action text-rose-600" onClick={() => { setMenuOpen(false); onAction(message, 'delete'); }}>
+                  <Trash2 className="size-3.5" /> Delete permanently
+                </button>
+              )}
             </div>
           )}
         </div>
