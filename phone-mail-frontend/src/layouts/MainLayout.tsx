@@ -46,7 +46,10 @@ export default function MainLayout() {
   const { user, logout } = useAuth();
   const [params, setParams] = useSearchParams();
 
-  const name = user?.name || 'You';
+  const name = user?.name || user?.phone || '';
+  const accountInitials = user?.name?.trim()
+    ? getInitials(user.name)
+    : user?.phone?.[0] || '?';
   const email = user?.phone ? `${user.phone}@phonemail.com` : '';
 
   const [search, setSearch] = useState('');
@@ -98,7 +101,7 @@ export default function MainLayout() {
       );
 
   return (
-    <div className="flex h-dvh flex-col bg-[#f3f6fb] text-slate-900 md:bg-[#eaf1fb]">
+    <div className="flex h-dvh flex-col bg-[var(--app-background)] text-slate-900 md:bg-[var(--app-background-desktop)]">
       {/* ── Mobile header (WhatsApp-style) ─────────────────────────── */}
       {!chatOpen && (
         <header className="relative z-20 bg-gradient-to-br from-[#1a66ff] to-[#0b4fe0] px-4 pb-4 pt-[max(env(safe-area-inset-top),0.75rem)] text-white md:hidden">
@@ -126,7 +129,7 @@ export default function MainLayout() {
               aria-label="Account"
               className="grid size-10 place-items-center rounded-full bg-[#0b3fbf] text-sm font-semibold ring-2 ring-white/70 transition active:scale-90"
             >
-              {getInitials(name)}
+              {accountInitials}
             </button>
           </div>
 
@@ -193,7 +196,7 @@ export default function MainLayout() {
               aria-label="Account menu"
               className="grid size-10 place-items-center rounded-full bg-[#1a66ff] text-sm font-semibold text-white shadow-md shadow-blue-500/30 ring-2 ring-white transition active:scale-90"
             >
-              {getInitials(name)}
+              {accountInitials}
             </button>
             <div
               className={cn(
@@ -210,7 +213,7 @@ export default function MainLayout() {
                 className="flex w-full items-center gap-3 bg-gradient-to-br from-[#1a66ff] to-[#0b4fe0] p-4 text-left text-white"
               >
                 <span className="grid size-14 place-items-center rounded-full bg-[#0b3fbf] text-xl font-semibold ring-2 ring-white/60">
-                  {getInitials(name)}
+                  {accountInitials}
                 </span>
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{name}</p>
@@ -317,7 +320,7 @@ export default function MainLayout() {
               <X className="size-5" />
             </button>
             <span className="relative grid size-14 place-items-center rounded-full bg-[#0b3fbf] text-xl font-semibold ring-2 ring-white/60">
-              {getInitials(name)}
+              {accountInitials}
             </span>
             <p className="relative mt-3 truncate text-lg font-semibold">{name}</p>
             <p className="relative truncate text-sm text-blue-100">{email}</p>

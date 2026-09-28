@@ -1,6 +1,6 @@
 import { Paperclip, Search, Star, Users } from 'lucide-react';
 import { cn } from '../../utils/cn';
-import { formatListTime, getInitials, avatarColor } from '../../utils/formatters';
+import { formatListTime, getContactInitials, avatarColor } from '../../utils/formatters';
 import { MailListSkeleton } from '../common/LoadingSpinner';
 import type { Conversation, MailFilter } from '../../types';
 
@@ -119,9 +119,14 @@ function Avatar({ conversation }: { conversation: Conversation }) {
   return (
     <span
       className="grid size-12 shrink-0 place-items-center rounded-full text-[15px] font-semibold text-white shadow-sm"
-      style={{ backgroundColor: avatarColor(seed) }}
+      style={{
+        backgroundColor: avatarColor(seed),
+        backgroundImage: conversation.avatarUrl ? `url("${conversation.avatarUrl}")` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
     >
-      {getInitials(conversation.title)}
+      {!conversation.avatarUrl && getContactInitials(conversation.title, conversation.participants[0]?.phone)}
     </span>
   );
 }

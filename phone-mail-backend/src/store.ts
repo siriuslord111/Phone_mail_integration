@@ -4,6 +4,7 @@ export type User = {
   email: string;
   name?: string;
   bio?: string;
+  avatarUrl?: string;
   passwordHash?: string;
   createdAt: string;
   hasMobileApp: boolean;
@@ -26,10 +27,12 @@ export type Message = {
   read: boolean;
   mailbox?: 'inbox' | 'sent' | 'spam' | 'trash';
   isStarred?: boolean;
+  attachments?: Array<{ id: string; name: string; size: number }>;
 };
 
 export const users: User[] = [];
 export const messages: Message[] = [];
+export const contactNicknames = new Map<string, string>();
 export const otpStore = new Map<string, OtpChallenge>();
 
 export function normalizePhone(phone: string) {

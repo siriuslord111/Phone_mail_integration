@@ -158,4 +158,5 @@ PhoneMail delivers it directly inside the app and saves sent and received copies
 in PostgreSQL. This works locally without Gmail SMTP or public DNS. If an
 `@phonemail.com` recipient is not registered, sending is rejected with a clear
 message. Ordinary external email addresses continue to use the configured SMTP
-provider. Local PhoneMail-to-PhoneMail messages do not support attachments yet.
+provider. Attachments up to 10 MB each (5 files per message) are stored with
+local PhoneMail-to-PhoneMail messages and delivered with external email.

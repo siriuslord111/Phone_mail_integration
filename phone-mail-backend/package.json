@@ -6,8 +6,12 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "predev": "npm run prisma:generate",
     "build": "tsc --project tsconfig.json",
+    "prebuild": "npm run prisma:generate",
     "test": "tsx --test src/services/*.test.ts src/routes/*.test.ts",
+    "pretest": "npm run prisma:generate",
+    "prisma:generate": "prisma generate",
     "db:push": "prisma db push",
     "start": "prisma db push --skip-generate && node dist/server.js"
   },

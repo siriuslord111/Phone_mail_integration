@@ -13,6 +13,8 @@ export interface Participant {
   phone: string;
   name: string;
   online?: boolean;
+  avatarUrl?: string;
+  bio?: string;
 }
 
 export interface Attachment {
@@ -47,6 +49,8 @@ export interface Message {
 export interface Conversation {
   id: string;
   title: string;
+  actualName?: string;
+  nickname?: string;
   isGroup: boolean;
   avatarUrl?: string;
   description?: string;

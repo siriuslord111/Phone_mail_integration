@@ -11,12 +11,6 @@ export class UnknownPhoneMailRecipientError extends Error {
   }
 }
 
-export class LocalAttachmentNotSupportedError extends Error {
-  constructor() {
-    super('Attachments are not supported for local PhoneMail-to-PhoneMail delivery yet.');
-  }
-}
-
 export class CannotSendToSelfError extends Error {
   constructor() {
     super('Choose another PhoneMail account as the recipient.');
@@ -28,7 +22,7 @@ export async function deliverEmail(input: {
   recipients: string[];
   subject: string;
   body: string;
-  attachments?: Array<{ filename: string; content: Buffer }>;
+  attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
 }) {
   const localRecipients: User[] = [];
   const externalRecipients: string[] = [];
@@ -45,11 +39,8 @@ export async function deliverEmail(input: {
     localRecipients.push(account);
   }
 
-  if (localRecipients.length && input.attachments?.length) {
-    throw new LocalAttachmentNotSupportedError();
-  }
-
   let externalDelivery: { delivered: boolean } | undefined;
+  let senderAttachments: Array<{ id: string; filename: string; size: number }> = [];
   if (externalRecipients.length) {
     externalDelivery = await sendOutboundEmail({
       from: input.sender.email,
@@ -88,7 +79,30 @@ export async function deliverEmail(input: {
       },
     ]);
 
-    await prisma.mailMessage.createMany({ data: copies, skipDuplicates: true });
+    const savedCopies = await prisma.$transaction(async (transaction) => {
+      const created = [];
+      for (const copy of copies) {
+        created.push(await transaction.mailMessage.create({
+          data: {
+            ...copy,
+            attachments: {
+              create: (input.attachments ?? []).map((attachment) => ({
+                filename: attachment.filename,
+                mimeType: attachment.contentType,
+                size: attachment.content.length,
+                content: new Uint8Array(attachment.content),
+              })),
+            },
+          },
+          include: { attachments: { select: { id: true, filename: true, size: true } } },
+        }));
+      }
+      return created;
+    });
+    const senderCopy = savedCopies.find(
+      (copy) => copy.userId === input.sender.id && copy.peerAddress === localRecipients[0].phoneNumber,
+    );
+    senderAttachments = senderCopy?.attachments ?? [];
   }
 
   return {
@@ -96,5 +110,6 @@ export async function deliverEmail(input: {
     localRecipients: localRecipients.length,
     externalRecipients: externalRecipients.length,
     externalDelivery,
+    attachments: senderAttachments,
   };
 }

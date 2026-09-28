@@ -22,8 +22,21 @@ model User {
   conversations Conversation[]
   inboundEmails InboundEmail[]
   mailMessages  MailMessage[]
+  contactNicknames ContactNickname[]
   drafts        MailDraft[]
   createdAt     DateTime       @default(now())
+}
+
+model ContactNickname {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone     String
+  nickname  String
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, phone])
+  @@index([userId])
 }
 
 model Conversation {
@@ -83,9 +96,23 @@ model MailMessage {
   isRead      Boolean  @default(false)
   isStarred   Boolean  @default(false)
   createdAt   DateTime @default(now())
+  attachments MailAttachment[]
 
   @@unique([messageId, userId])
   @@index([userId, peerAddress, createdAt])
+}
+
+model MailAttachment {
+  id            String      @id @default(uuid())
+  mailMessageId String
+  mailMessage   MailMessage @relation(fields: [mailMessageId], references: [id], onDelete: Cascade)
+  filename      String
+  mimeType      String
+  size          Int
+  content       Bytes
+  createdAt     DateTime    @default(now())
+
+  @@index([mailMessageId])
 }
 
 model MailDraft {

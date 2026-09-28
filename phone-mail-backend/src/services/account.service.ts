@@ -5,7 +5,7 @@ import { ensureUser, normalizePhone, users, type User } from '../store';
 
 export class AccountAlreadyExistsError extends Error {}
 
-const useMemoryStore = process.env.PHONEMAIL_STORAGE_MODE === 'memory';
+export const memoryStoreEnabled = process.env.PHONEMAIL_STORAGE_MODE === 'memory';
 
 function toAccount(user: PrismaUser): User {
   return {
@@ -14,6 +14,7 @@ function toAccount(user: PrismaUser): User {
     email: user.email,
     name: user.name ?? undefined,
     bio: user.bio ?? undefined,
+    avatarUrl: user.profilePic ?? undefined,
     passwordHash: user.passwordHash ?? undefined,
     createdAt: user.createdAt.toISOString(),
     hasMobileApp: user.hasMobileApp,
@@ -22,7 +23,7 @@ function toAccount(user: PrismaUser): User {
 
 export async function findAccountByPhone(phoneNumber: string): Promise<User | undefined> {
   const phone = normalizePhone(phoneNumber);
-  if (useMemoryStore) return users.find((user) => user.phoneNumber === phone);
+  if (memoryStoreEnabled) return users.find((user) => user.phoneNumber === phone);
 
   const user = await prisma.user.findUnique({ where: { phoneNumber: phone } });
   return user ? toAccount(user) : undefined;
@@ -30,7 +31,7 @@ export async function findAccountByPhone(phoneNumber: string): Promise<User | un
 
 export async function findAccountByEmail(email: string): Promise<User | undefined> {
   const normalizedEmail = email.trim().toLowerCase();
-  if (useMemoryStore) {
+  if (memoryStoreEnabled) {
     return users.find((user) => user.email.toLowerCase() === normalizedEmail);
   }
 
@@ -38,8 +39,17 @@ export async function findAccountByEmail(email: string): Promise<User | undefine
   return user ? toAccount(user) : undefined;
 }
 
+export async function findAccountsByPhones(phoneNumbers: string[]): Promise<User[]> {
+  const phones = [...new Set(phoneNumbers.map(normalizePhone).filter(Boolean))];
+  if (phones.length === 0) return [];
+  if (memoryStoreEnabled) return users.filter((user) => phones.includes(user.phoneNumber));
+
+  const accounts = await prisma.user.findMany({ where: { phoneNumber: { in: phones } } });
+  return accounts.map(toAccount);
+}
+
 export async function findAccountBySession(id: string, phoneNumber: string): Promise<User | undefined> {
-  if (useMemoryStore) {
+  if (memoryStoreEnabled) {
     return users.find((user) => user.id === id && user.phoneNumber === phoneNumber);
   }
 
@@ -53,7 +63,7 @@ export async function createAccount(
   hasMobileApp = false,
 ): Promise<User> {
   const phone = normalizePhone(phoneNumber);
-  if (useMemoryStore) {
+  if (memoryStoreEnabled) {
     if (users.some((user) => user.phoneNumber === phone)) throw new AccountAlreadyExistsError();
     return ensureUser(phone, passwordHash, hasMobileApp);
   }
@@ -83,16 +93,16 @@ export async function createAccount(
 
 export async function updateAccount(
   user: User,
-  changes: Pick<User, 'name' | 'bio'>,
+  changes: Pick<User, 'name' | 'bio' | 'avatarUrl'>,
 ): Promise<void> {
-  if (useMemoryStore) {
+  if (memoryStoreEnabled) {
     Object.assign(user, changes);
     return;
   }
 
   await prisma.user.update({
     where: { id: user.id },
-    data: changes,
+    data: { name: changes.name, bio: changes.bio, profilePic: changes.avatarUrl },
   });
   Object.assign(user, changes);
 }

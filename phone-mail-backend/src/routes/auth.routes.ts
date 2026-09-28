@@ -29,6 +29,7 @@ function toUser(user: User) {
     phone: user.phoneNumber.replace(/^\+91/, ''),
     name: user.name ?? '',
     bio: user.bio ?? '',
+    avatarUrl: user.avatarUrl ?? '',
     phoneNumber: user.phoneNumber,
     email: user.email,
     hasMobileApp: user.hasMobileApp,

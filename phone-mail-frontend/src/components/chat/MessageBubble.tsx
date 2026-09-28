@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type TouchEvent } from 'react';
-import { CheckCheck, Copy, EllipsisVertical, Flag, Paperclip, Reply, Star, Trash2 } from 'lucide-react';
+import { CheckCheck, Copy, Download, EllipsisVertical, Flag, Paperclip, Reply, Star, Trash2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatBytes, formatClock } from '../../utils/formatters';
+import { downloadAttachment } from '../../api/email.api';
+import { getErrorMessage } from '../../api/axios';
 import type { Message } from '../../types';
 
 interface MessageBubbleProps {
@@ -20,6 +22,7 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
   const [dragX, setDragX] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [attachmentError, setAttachmentError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const isOut = message.direction === 'out';
   const canSwipe = Boolean(onSwipeReply) && !message.replied;
@@ -126,10 +129,27 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
                 <Paperclip className="size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{att.name}</span>
                 <span className="shrink-0 opacity-70">{formatBytes(att.size)}</span>
+                {att.url && (
+                  <button
+                    type="button"
+                    aria-label={`Download ${att.name}`}
+                    className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-black/10"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setAttachmentError('');
+                      void downloadAttachment(att.id, att.name).catch((error: unknown) => {
+                        setAttachmentError(getErrorMessage(error, "Couldn't download the attachment."));
+                      });
+                    }}
+                  >
+                    <Download className="size-3.5" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
         )}
+        {attachmentError && <p role="alert" className="mt-1 text-xs text-rose-200">{attachmentError}</p>}
 
         <div className={cn('mt-1 flex items-center justify-end gap-1 text-[11px]', isOut ? 'text-blue-100/90' : 'text-slate-400')}>
           <span>{formatClock(message.createdAt)}</span>

@@ -202,6 +202,18 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
   return data.message ?? data;
 }
 
+export async function downloadAttachment(id: string, filename: string): Promise<void> {
+  const { data } = await api.get(`/attachments/${encodeURIComponent(id)}`, { responseType: 'blob' });
+  const url = URL.createObjectURL(data);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
 /** PATCH /conversations/:id  { isFavourite } */
 export async function toggleFavourite(conversationId: string, value: boolean): Promise<void> {
   if (DEMO_MODE) {
@@ -228,6 +240,11 @@ export async function updateConversation(
   }
   const { data } = await api.patch(`/conversations/${conversationId}`, patch);
   return data.conversation ?? data;
+}
+
+export async function saveContactNickname(phone: string, nickname: string): Promise<string> {
+  const { data } = await api.patch(`/contacts/${encodeURIComponent(phone)}/nickname`, { nickname });
+  return data.nickname;
 }
 
 /** Resolve a phone number to a display name, for the "To" field while composing. */

@@ -28,6 +28,14 @@ export function getInitials(name: string) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+export function getContactInitials(name: string, phone?: string) {
+  if (/^\+?\d+$/.test(name.trim())) {
+    const digits = digitsOnly(phone || name);
+    return digits.slice(-10, -9) || '?';
+  }
+  return getInitials(name);
+}
+
 const AVATAR_COLORS = ['#1a66ff', '#7c4dff', '#12b76a', '#e11d48', '#f59e0b', '#0b4fe0', '#0891b2'];
 
 /** Stable colour per contact, so "Rahul" is always the same blue. */

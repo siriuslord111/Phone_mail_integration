@@ -36,6 +36,11 @@ API. If the provider is not configured or delivery fails, sign-up and login
 remain available through the explicit password option.
 
 Run backend auth checks with `npm test` from `phone-mail-backend`.
+The `dev`, `test`, and `build` scripts generate the Prisma client automatically.
+
+Profile names, About descriptions, and photos are shared with other users in
+conversation lists and contact details. Profile photos can be PNG, JPEG, WebP,
+or GIF images up to 2 MB.
 
 ## Local inbound email testing
 
@@ -49,5 +54,6 @@ domain you control and an inbound email provider.
 Sending from a registered PhoneMail account to another registered
 `@phonemail.com` address is delivered directly to the recipient's PhoneMail
 inbox and saved to PostgreSQL; Gmail SMTP and public DNS are not used for that
-path. Sending to external email addresses continues to use SMTP. Attachments
-are not supported for local PhoneMail-to-PhoneMail messages yet.
+path. Sending to external email addresses continues to use SMTP. Up to five
+attachments (10 MB each) are stored with local messages and delivered with
+external email.

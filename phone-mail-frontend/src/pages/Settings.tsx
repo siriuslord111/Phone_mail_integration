@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
+import { applyDarkMode } from '../utils/theme';
 
 interface SettingsOption {
   id: string;
@@ -52,8 +53,8 @@ const OPTIONS: SettingsOption[] = [
   {
     id: 'appearance',
     title: 'Appearance',
-    description: 'PhoneMail uses a light, WhatsApp-inspired theme',
-    detail: 'The light appearance is currently the only available theme.',
+    description: 'Choose a light or dark theme for PhoneMail',
+    detail: 'Dark mode changes the app colors to make the interface more comfortable in low-light settings.',
     icon: Palette,
   },
   {
@@ -68,6 +69,7 @@ const OPTIONS: SettingsOption[] = [
 const PREFERENCE_KEYS: Record<string, string> = {
   notifications: 'phonemail_setting_notifications',
   conversations: 'phonemail_setting_compact_conversations',
+  appearance: 'phonemail_setting_dark_mode',
 };
 
 function readPreference(key: string, defaultValue: boolean) {
@@ -117,7 +119,11 @@ export default function Settings() {
           <p className="mt-5 text-sm leading-6 text-slate-600">{option.detail}</p>
           {preferenceKey && (
             <label className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm font-medium text-slate-700">
-              {option.id === 'notifications' ? 'Enable notifications' : 'Use compact conversations'}
+              {option.id === 'notifications'
+                ? 'Enable notifications'
+                : option.id === 'appearance'
+                  ? 'Use dark mode'
+                  : 'Use compact conversations'}
               <input
                 type="checkbox"
                 checked={enabled}
@@ -125,6 +131,7 @@ export default function Settings() {
                   const value = event.target.checked;
                   setEnabled(value);
                   localStorage.setItem(preferenceKey, String(value));
+                  if (option.id === 'appearance') applyDarkMode(value);
                 }}
                 className="size-5 accent-[#1a66ff]"
               />

@@ -5,7 +5,7 @@ import { TwilioService } from '../services/twilio.service';
 import { findAccountByEmail } from '../services/account.service';
 import { normalizeRecipients } from '../services/email-recipient';
 import { requireAuth } from '../middlewares/auth';
-import { CannotSendToSelfError, deliverEmail, LocalAttachmentNotSupportedError, UnknownPhoneMailRecipientError } from '../services/email-delivery.service';
+import { CannotSendToSelfError, deliverEmail, UnknownPhoneMailRecipientError } from '../services/email-delivery.service';
 
 const router = Router();
 router.use(requireAuth);
@@ -62,7 +62,6 @@ router.post('/send', async (req, res) => {
   } catch (error) {
     if (
       error instanceof UnknownPhoneMailRecipientError ||
-      error instanceof LocalAttachmentNotSupportedError ||
       error instanceof CannotSendToSelfError
     ) {
       return res.status(400).json({ success: false, message: error.message });

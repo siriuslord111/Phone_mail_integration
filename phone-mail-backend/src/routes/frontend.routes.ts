@@ -4,9 +4,10 @@ import { addMessage, messages, normalizePhone } from '../store';
 import { requireAuth } from '../middlewares/auth';
 import { sendOutboundEmail } from '../services/email.service';
 import { normalizeRecipients } from '../services/email-recipient';
-import { updateAccount } from '../services/account.service';
+import { findAccountsByPhones, memoryStoreEnabled, updateAccount } from '../services/account.service';
+import { getContactNicknames, saveContactNickname } from '../services/contact-nickname.service';
 import { prisma } from '../config/prisma';
-import { CannotSendToSelfError, deliverEmail, LocalAttachmentNotSupportedError, UnknownPhoneMailRecipientError } from '../services/email-delivery.service';
+import { CannotSendToSelfError, deliverEmail, UnknownPhoneMailRecipientError } from '../services/email-delivery.service';
 import multer from 'multer';
 
 const router = Router();
@@ -89,6 +90,7 @@ function storedMessage(message: {
   createdAt: Date;
   isRead: boolean;
   isStarred: boolean;
+  attachments?: Array<{ id: string; filename: string; size: number }>;
 }) {
   return {
     id: `local-${message.id}`,
@@ -104,6 +106,12 @@ function storedMessage(message: {
     isStarred: message.isStarred,
     status: message.direction === 'out' ? 'sent' as const : undefined,
     messageId: message.messageId,
+    attachments: message.attachments?.map((attachment) => ({
+      id: attachment.id,
+      name: attachment.filename,
+      size: attachment.size,
+      url: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+    })),
   };
 }
 
@@ -115,7 +123,7 @@ router.get('/users/me', (req, res) => {
       phone: user.phoneNumber.replace(/^\+91/, ''),
       name: user.name ?? '',
       email: user.email,
-      avatarUrl: undefined,
+      avatarUrl: user.avatarUrl ?? '',
       bio: user.bio ?? '',
     },
   });
@@ -125,28 +133,63 @@ router.patch('/users/me', (req, res, next) => {
   void updateUserProfile(req, res).catch(next);
 });
 
+router.patch('/contacts/:phone/nickname', (req, res, next) => {
+  void updateContactNickname(req, res).catch(next);
+});
+
+async function updateContactNickname(req: Request, res: Response) {
+  const user = res.locals.authenticatedUser;
+  const phoneInput = String(req.params.phone ?? '');
+  const phone = normalizePhone(phoneInput);
+  if (!/^\+\d{8,15}$/.test(phone) || phone === user.phoneNumber) {
+    return res.status(400).json({ message: 'Choose a valid contact to save a nickname for.' });
+  }
+  if (typeof req.body?.nickname !== 'string' || req.body.nickname.trim().length > 100) {
+    return res.status(400).json({ message: 'Nickname must be 100 characters or fewer.' });
+  }
+  const nickname = await saveContactNickname(user.id, phone, req.body.nickname);
+  return res.json({ nickname });
+}
+
 async function updateUserProfile(req: Request, res: Response) {
   const user = res.locals.authenticatedUser;
+  const changes: { name?: string; bio?: string; avatarUrl?: string } = {};
   if (req.body?.name !== undefined) {
     if (typeof req.body.name !== 'string' || req.body.name.trim().length > 100) {
       return res.status(400).json({ message: 'Name must be 100 characters or fewer.' });
     }
-    user.name = req.body.name.trim();
+    changes.name = req.body.name.trim();
   }
   if (req.body?.bio !== undefined) {
     if (typeof req.body.bio !== 'string' || req.body.bio.trim().length > 500) {
       return res.status(400).json({ message: 'Description must be 500 characters or fewer.' });
     }
-    user.bio = req.body.bio.trim();
+    changes.bio = req.body.bio.trim();
   }
-  await updateAccount(user, { name: user.name, bio: user.bio });
+  if (req.body?.avatarUrl !== undefined) {
+    if (typeof req.body.avatarUrl !== 'string') {
+      return res.status(400).json({ message: 'Profile photo must be a valid image.' });
+    }
+    if (req.body.avatarUrl !== '' && !/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(req.body.avatarUrl)) {
+      return res.status(400).json({ message: 'Profile photo must be a PNG, JPEG, WebP, or GIF image.' });
+    }
+    if (Buffer.byteLength(req.body.avatarUrl, 'utf8') > 2_800_000) {
+      return res.status(400).json({ message: 'Profile photo must be 2 MB or smaller.' });
+    }
+    changes.avatarUrl = req.body.avatarUrl;
+  }
+  await updateAccount(user, {
+    name: changes.name ?? user.name,
+    bio: changes.bio ?? user.bio,
+    avatarUrl: changes.avatarUrl ?? user.avatarUrl,
+  });
   return res.json({
     user: {
       id: user.id,
       phone: user.phoneNumber.replace(/^\+91/, ''),
       name: user.name ?? '',
       email: user.email,
-      avatarUrl: undefined,
+      avatarUrl: user.avatarUrl ?? '',
       bio: user.bio ?? '',
     },
   });
@@ -174,12 +217,12 @@ async function listConversations(req: Request, res: Response) {
       direction: message.from === userPhone ? 'out' : 'in',
       mailbox: message.mailbox ?? (message.from === userPhone ? 'sent' : 'inbox'),
       isStarred: message.isStarred ?? false,
-      hasAttachments: false,
+      hasAttachments: Boolean(message.attachments?.length),
     });
     grouped.set(peer, list);
   }
 
-  const inboundEmails = await prisma.inboundEmail.findMany({
+  const inboundEmails = memoryStoreEnabled ? [] : await prisma.inboundEmail.findMany({
     where: { userId: user.id },
     orderBy: { receivedAt: 'desc' },
   });
@@ -201,9 +244,10 @@ async function listConversations(req: Request, res: Response) {
     grouped.set(email.fromAddress, list);
   }
 
-  const storedEmails = await prisma.mailMessage.findMany({
+  const storedEmails = memoryStoreEnabled ? [] : await prisma.mailMessage.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: 'desc' },
+    include: { attachments: { select: { id: true, filename: true, size: true } } },
   });
   for (const email of storedEmails) {
     const list = grouped.get(email.peerAddress) ?? [];
@@ -218,10 +262,16 @@ async function listConversations(req: Request, res: Response) {
       direction: email.direction === 'out' ? 'out' : 'in',
       mailbox: email.mailbox as ConversationEntry['mailbox'],
       isStarred: email.isStarred,
-      hasAttachments: false,
+      hasAttachments: email.attachments.length > 0,
     });
     grouped.set(email.peerAddress, list);
   }
+
+  const contactProfiles = await findAccountsByPhones(
+    [...grouped.keys()].filter((phone) => /^\+\d{8,15}$/.test(phone)),
+  );
+  const profileByPhone = new Map(contactProfiles.map((profile) => [profile.phoneNumber, profile]));
+  const nicknames = await getContactNicknames(user.id, [...grouped.keys()]);
 
   const conversations = [...grouped.entries()]
     .map(([peer, list]) => [
@@ -237,7 +287,14 @@ async function listConversations(req: Request, res: Response) {
       if (filter === 'attachments' && !list.some((message) => message.hasAttachments)) return false;
       return true;
     })
-    .filter(([peer, list]) => !query || peer.includes(query) || list.some((message) => `${message.subject} ${message.body}`.toLowerCase().includes(query)))
+    .filter(([peer, list]) => {
+      const profile = profileByPhone.get(peer);
+      return !query
+        || peer.includes(query)
+        || profile?.name?.toLowerCase().includes(query)
+        || profile?.bio?.toLowerCase().includes(query)
+        || list.some((message) => `${message.subject} ${message.body}`.toLowerCase().includes(query));
+    })
     .map(([peer, list]) => {
       list.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
       const last = list.reduce((latest, message) =>
@@ -245,14 +302,23 @@ async function listConversations(req: Request, res: Response) {
       );
       return {
         id: `conversation-${peer}`,
-        title: peer,
+        title: nicknames.get(peer) || profileByPhone.get(peer)?.name || peer,
+        actualName: profileByPhone.get(peer)?.name || peer,
+        nickname: nicknames.get(peer) ?? '',
         isGroup: false,
-        participants: [{ phone: peer, name: peer }],
+        avatarUrl: profileByPhone.get(peer)?.avatarUrl,
+        description: profileByPhone.get(peer)?.bio,
+        participants: [{
+          phone: peer,
+          name: profileByPhone.get(peer)?.name || peer,
+          avatarUrl: profileByPhone.get(peer)?.avatarUrl,
+          bio: profileByPhone.get(peer)?.bio,
+        }],
         lastMessage: {
           preview: last.body,
           subject: last.subject,
           createdAt: last.createdAt,
-          hasAttachment: false,
+          hasAttachment: Boolean(last.hasAttachments),
           direction: last.direction,
         },
         unreadCount: list.filter((message) => !message.read && message.direction === 'in').length,
@@ -279,13 +345,14 @@ async function listConversationMessages(req: Request, res: Response) {
     isMessageForUser(message, userPhone, user.email) &&
     peerForMessage(message, userPhone) === peer,
   );
-  const inboundEmails = await prisma.inboundEmail.findMany({
+  const inboundEmails = memoryStoreEnabled ? [] : await prisma.inboundEmail.findMany({
     where: { userId: user.id, fromAddress: peer },
     orderBy: { receivedAt: 'asc' },
   });
-  const storedEmails = await prisma.mailMessage.findMany({
+  const storedEmails = memoryStoreEnabled ? [] : await prisma.mailMessage.findMany({
     where: { userId: user.id, peerAddress: peer },
     orderBy: { createdAt: 'asc' },
+    include: { attachments: { select: { id: true, filename: true, size: true } } },
   });
   await Promise.all([
     prisma.inboundEmail.updateMany({
@@ -335,14 +402,12 @@ router.post('/messages', (req, res, next) => {
   }
   const subject = String(req.body?.subject ?? 'New message').trim();
   const body = typeof req.body?.body === 'string' ? req.body.body : '';
-  if (!body.trim()) {
-    return res.status(400).json({ message: 'Write a message before sending.' });
-  }
+  const files = Array.isArray(req.files) ? req.files : [];
+  if (!body.trim() && files.length === 0) return res.status(400).json({ message: 'Write a message or attach a file before sending.' });
   if (subject.length > 200 || /[\r\n]/.test(subject)) {
     return res.status(400).json({ message: 'Subject must be 200 characters or fewer and contain no line breaks.' });
   }
 
-  const files = Array.isArray(req.files) ? req.files : [];
   const sender = res.locals.authenticatedUser.phoneNumber;
   try {
     const delivery = await deliverEmail({
@@ -350,7 +415,11 @@ router.post('/messages', (req, res, next) => {
       recipients,
       subject,
       body,
-      attachments: files.map((file) => ({ filename: file.originalname, content: file.buffer })),
+      attachments: files.map((file) => ({
+        filename: file.originalname,
+        contentType: file.mimetype,
+        content: file.buffer,
+      })),
     });
     if (delivery.externalRecipients > 0) {
       const externalRecipients = recipients.filter((recipient) => !recipient.endsWith('@phonemail.com'));
@@ -359,6 +428,11 @@ router.post('/messages', (req, res, next) => {
         to: externalRecipients,
         subject,
         body,
+        attachments: files.map((file, index) => ({
+          id: `external-${Date.now()}-${index}`,
+          name: file.originalname,
+          size: file.size,
+        })),
       });
     }
     const message = {
@@ -373,12 +447,25 @@ router.post('/messages', (req, res, next) => {
       direction: 'out' as const,
       mailbox: 'sent' as const,
       isReply: Boolean(req.body?.inReplyTo),
+      attachments: files.length > 0
+        ? (delivery.attachments.length > 0
+          ? delivery.attachments.map((attachment) => ({
+            id: attachment.id,
+            name: attachment.filename,
+            size: attachment.size,
+            url: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+          }))
+          : files.map((file, index) => ({
+            id: `external-${Date.now()}-${index}`,
+            name: file.originalname,
+            size: file.size,
+          })))
+        : [],
     };
     return res.status(201).json({ message, delivery });
   } catch (error) {
     if (
       error instanceof UnknownPhoneMailRecipientError ||
-      error instanceof LocalAttachmentNotSupportedError ||
       error instanceof CannotSendToSelfError
     ) {
       return res.status(400).json({ message: error.message });
@@ -388,6 +475,24 @@ router.post('/messages', (req, res, next) => {
       ? error.message
       : 'The email could not be sent. Check SMTP settings and the recipient address, then try again.';
     return res.status(message.startsWith('Email sending is not configured.') ? 503 : 502).json({ message });
+  }
+});
+
+router.get('/attachments/:id', async (req, res, next) => {
+  try {
+    const attachment = await prisma.mailAttachment.findFirst({
+      where: {
+        id: req.params.id,
+        mailMessage: { userId: res.locals.authenticatedUser.id },
+      },
+      select: { filename: true, mimeType: true, content: true },
+    });
+    if (!attachment) return res.status(404).json({ message: 'Attachment not found.' });
+    res.type(attachment.mimeType || 'application/octet-stream');
+    res.attachment(attachment.filename);
+    return res.send(Buffer.from(attachment.content));
+  } catch (error) {
+    return next(error);
   }
 });
 

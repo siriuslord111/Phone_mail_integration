@@ -1,6 +1,7 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { Paperclip, Send, X } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { getErrorMessage } from '../../api/axios';
 import type { Message } from '../../types';
 
 interface ComposeBarProps {
@@ -11,7 +12,7 @@ interface ComposeBarProps {
   /** The message being replied to — shown as a dismissible quote chip above the input. */
   replyTarget: Message | null;
   onCancelReply: () => void;
-  onSend: (body: string, files: File[]) => void;
+  onSend: (body: string, files: File[]) => Promise<void>;
   sending?: boolean;
   /** WhatsApp's camera-tab slot: opens the traditional compose view with "To" pre-filled+locked. */
   onOpenTraditional: () => void;
@@ -30,15 +31,37 @@ export function ComposeBar({
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [subjectOpen, setSubjectOpen] = useState(showSubject);
+  const [sendError, setSendError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canSend = body.trim().length > 0 && !sending;
+  const canSend = (body.trim().length > 0 || files.length > 0) && !sending;
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!canSend) return;
-    onSend(body.trim(), files);
-    setBody('');
-    setFiles([]);
+    setSendError('');
+    try {
+      await onSend(body.trim(), files);
+      setBody('');
+      setFiles([]);
+    } catch (error) {
+      setSendError(getErrorMessage(error, "Couldn't send the message. Your text and attachments are still here."));
+    }
+  };
+
+  const handleFilesSelected = (selectedFiles: FileList | null) => {
+    if (!selectedFiles?.length) return;
+    const addedFiles = Array.from(selectedFiles);
+    const oversized = addedFiles.find((file) => file.size > 10 * 1024 * 1024);
+    if (oversized) {
+      setSendError(`${oversized.name} is larger than the 10 MB attachment limit.`);
+      return;
+    }
+    if (files.length + addedFiles.length > 5) {
+      setSendError('You can attach up to 5 files to a message.');
+      return;
+    }
+    setSendError('');
+    setFiles((previous) => [...previous, ...addedFiles]);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -100,8 +123,12 @@ export function ComposeBar({
           ref={fileInputRef}
           type="file"
           multiple
+          accept="*/*"
           className="hidden"
-          onChange={(e) => setFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])])}
+          onChange={(e) => {
+            handleFilesSelected(e.target.files);
+            e.currentTarget.value = '';
+          }}
         />
         <button
           type="button"
@@ -150,6 +177,11 @@ export function ComposeBar({
           <Send className="size-[18px] translate-x-[-1px]" />
         </button>
       </div>
+      {sendError && (
+        <p role="alert" className="px-2 pt-2 text-xs text-rose-600">
+          {sendError}
+        </p>
+      )}
     </div>
   );
 }

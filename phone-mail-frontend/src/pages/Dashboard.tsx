@@ -13,11 +13,12 @@ import {
   listConversations,
   listDrafts,
   sendMessage,
+  saveContactNickname,
   toggleFavourite,
   updateConversation,
   updateMessage,
 } from '../api/email.api';
-import { formatDay, getInitials, avatarColor, normalizePhone } from '../utils/formatters';
+import { formatDay, getContactInitials, avatarColor, normalizePhone } from '../utils/formatters';
 import type { Conversation, Folder, MailFilter, Message } from '../types';
 import type { MailDraft } from '../api/email.api';
 
@@ -129,6 +130,10 @@ export default function Dashboard() {
             }}
             onComposeTraditional={(phone) => openCompose(phone)}
             onRead={refreshList}
+            onSaveNickname={async (phone, nickname) => {
+              await saveContactNickname(phone, nickname);
+              await refreshList();
+            }}
           />
         ) : (
           <EmptyPane />
@@ -190,9 +195,10 @@ interface ChatPanelProps {
   onFavouriteToggle: (next: boolean) => void;
   onComposeTraditional: (lockedPhone: string) => void;
   onRead: () => void;
+  onSaveNickname: (phone: string, nickname: string) => Promise<void>;
 }
 
-function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTraditional, onRead }: ChatPanelProps) {
+function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTraditional, onRead, onSaveNickname }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
@@ -218,7 +224,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages, loading]);
 
-  const handleSend = async (body: string, files: File[]) => {
+  const handleSend = async (body: string, files: File[]): Promise<void> => {
     setSending(true);
     try {
       const msg = await sendMessage({
@@ -259,6 +265,11 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
           onSave={async (patch) => {
             await updateConversation(conversation.id, patch);
           }}
+          onSaveNickname={async (nickname) => {
+            const contactPhone = conversation.participants[0]?.phone;
+            if (!contactPhone) throw new Error('Contact phone number is unavailable.');
+            await onSaveNickname(contactPhone, nickname);
+          }}
         />
       )}
       <header className="flex shrink-0 items-center gap-3 border-b border-slate-100 bg-white px-3 py-2.5 md:px-5 md:py-3.5">
@@ -274,9 +285,14 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
           onClick={() => setShowConversationProfile(true)}
           aria-label="View contact profile"
           className="grid size-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white shadow-sm"
-          style={{ backgroundColor: avatarColor(singlePhone ?? conversation.title) }}
+          style={{
+            backgroundColor: avatarColor(singlePhone ?? conversation.title),
+            backgroundImage: conversation.avatarUrl ? `url("${conversation.avatarUrl}")` : undefined,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
         >
-          {getInitials(conversation.title)}
+          {!conversation.avatarUrl && getContactInitials(conversation.title, singlePhone)}
         </button>
 
         <div className="min-w-0 flex-1">
