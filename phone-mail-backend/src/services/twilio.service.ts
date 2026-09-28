@@ -1,14 +1,29 @@
 import twilio from 'twilio';
+import { env } from '../config/env';
 
 export class TwilioService {
-  static generateIVRMenu() {
+  static webhookUrl(path: string) {
+    return `${env.twilioWebhookBaseUrl}${path}`;
+  }
+
+  static isWebhookSignatureValid(url: string, signature: string, params: Record<string, string>) {
+    return Boolean(
+      env.twilioAuthToken &&
+      signature &&
+      twilio.validateRequest(env.twilioAuthToken, signature, url, params),
+    );
+  }
+
+  static generateIVRMenu(actionUrl: string) {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const response = new VoiceResponse();
 
     const gather = response.gather({
+      input: ['dtmf'],
       numDigits: 1,
-      action: '/api/auth/ivr/process',
+      action: actionUrl,
       method: 'POST',
+      timeout: 8,
     });
 
     gather.say('Welcome to PhoneMail. Press 1 to create an account.');
@@ -17,17 +32,32 @@ export class TwilioService {
     return response.toString();
   }
 
-  static handleIVRInput(digits: string, callerNumber: string) {
+  static promptForIvrOtp(actionUrl: string) {
     const VoiceResponse = twilio.twiml.VoiceResponse;
     const response = new VoiceResponse();
+    const gather = response.gather({
+      input: ['dtmf'],
+      numDigits: 6,
+      action: actionUrl,
+      method: 'POST',
+      timeout: 30,
+    });
+    gather.say('We sent a six digit verification code to your phone. Enter the code using your keypad.');
+    response.say('We did not receive the verification code. Please call again to restart account creation.');
+    return response.toString();
+  }
 
-    if (digits === '1') {
-      response.say(`Thanks! Your PhoneMail account is being created for ${callerNumber}.`);
-      response.say('You can now log in using your phone number and OTP.');
-      return response.toString();
-    }
-
-    response.say('Invalid input. Goodbye.');
+  static sayIvrMessage(message: 'invalid' | 'alreadyRegistered' | 'otpUnavailable' | 'otpInvalid' | 'created') {
+    const messages = {
+      invalid: 'We could not verify your phone number. Please call again from a valid mobile number.',
+      alreadyRegistered: 'An account already exists for this phone number. Please log in using the PhoneMail app.',
+      otpUnavailable: 'We could not send a verification code right now. Please try again later.',
+      otpInvalid: 'The code was incorrect or expired. Call again to retry. If you used all five attempts, wait fifteen minutes before trying again.',
+      created: 'Your PhoneMail account has been created. You can now log in using a phone verification code.',
+    };
+    const response = new twilio.twiml.VoiceResponse();
+    response.say(messages[message]);
+    response.hangup();
     return response.toString();
   }
 

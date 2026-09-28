@@ -25,6 +25,66 @@ Inbox, and permanently deleting messages from Trash.
 
 The 2Factor integration expects a valid account API key and an approved OTP SMS
 template; delivery cannot be tested until those credentials are supplied.
+Web and call-based account registration both create accounts only after an OTP
+has been verified. Call registration uses Twilio Voice for the call and 2Factor
+for the SMS code; the caller enters that code using the phone keypad.
+
+## Toll-free phone registration
+
+The IVR (interactive voice response) flow is:
+
+1. A caller dials your Twilio toll-free number and presses **1**.
+2. PhoneMail sends a six-digit code to the caller ID phone number through 2Factor.
+3. The caller enters the code during the call. It expires after five minutes and
+   allows at most five attempts.
+4. PhoneMail creates the account only after the code is accepted.
+
+For local testing, configure a public HTTPS tunnel such as ngrok to forward to
+the API at `http://localhost:3000`. Twilio cannot call a `localhost` webhook
+directly. Put the API's public webhook base URL (ending in `/api/auth`) and your
+real toll-free number in the ignored root `.env` file:
+
+```env
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_TOLL_FREE_NUMBER=+18005550100
+TWILIO_WEBHOOK_BASE_URL=https://your-public-tunnel.example/api/auth
+TWO_FACTOR_API_KEY=your-2factor-api-key
+TWO_FACTOR_OTP_TEMPLATE=your-approved-otp-template
+```
+
+In the Twilio Console, set the toll-free number's **A Call Comes In** webhook to
+`https://your-public-tunnel.example/api/auth/ivr/incoming` and select **HTTP
+POST**. The application validates Twilio's request signature and returns
+absolute callback URLs for the keypad steps. Do not disable signature checking
+or expose the Twilio Auth Token. Rebuild the API after changing `.env`:
+
+```powershell
+docker compose up -d --build api frontend
+```
+
+The number shown on the registration page comes from `TWILIO_TOLL_FREE_NUMBER`.
+Twilio may require toll-free verification or account approval before calls or
+messages work; trial-account geographic and recipient restrictions also apply.
+Confirm that your toll-free number can receive calls from the countries where
+your users are located. OTP delivery remains subject to the 2Factor account,
+approved template, and destination-country support.
+
+### Simulate the IVR locally without a phone number
+
+For a no-cost local demo while waiting for a voice provider, set
+`IVR_DEMO_MODE=true` in the ignored root `.env` file and run:
+
+```powershell
+docker compose up -d --force-recreate api
+```
+
+On the registration page, choose **Simulate call and press 1**. The simulated
+call displays a demo code; enter it to create a passwordless account. This
+does not place a real call or send an SMS, and the code is deliberately shown
+in the UI only for demonstrating the flow. Turn `IVR_DEMO_MODE` off before
+exposing the API to the internet; the demo endpoint is not a real identity
+verification method.
 
 ## Sending email
 

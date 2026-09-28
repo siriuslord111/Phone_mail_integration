@@ -6,7 +6,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { loginWithPassword, registerWithPassword, verifyOtp, type AuthPurpose } from '../api/auth.api';
+import {
+  loginWithPassword,
+  registerWithPassword,
+  verifyDemoIvrRegistration,
+  verifyOtp,
+  type AuthPurpose,
+} from '../api/auth.api';
 import { DEMO_MODE, DEMO_USER_KEY, TOKEN_KEY } from '../api/axios';
 import { getMe, updateProfile } from '../api/user.api';
 import type { User } from '../types';
@@ -20,6 +26,7 @@ export interface AuthContextValue {
   registerPassword: (phone: string, password: string) => Promise<void>;
   loginPassword: (phone: string, password: string) => Promise<{ isNewUser: boolean }>;
   authenticateOtp: (phone: string, otp: string, purpose: AuthPurpose) => Promise<{ isNewUser: boolean }>;
+  authenticateDemoIvr: (phone: string, otp: string) => Promise<void>;
   completeProfile: (name: string) => Promise<void>;
   saveProfile: (patch: ProfilePatch) => Promise<void>;
   logout: () => void;
@@ -78,6 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { isNewUser };
   }, []);
 
+  const authenticateDemoIvr = useCallback(async (phone: string, otp: string) => {
+    const { token, user: registeredUser } = await verifyDemoIvrRegistration(phone, otp);
+    localStorage.setItem(TOKEN_KEY, token);
+    setUser(registeredUser);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(DEMO_USER_KEY);
@@ -85,8 +98,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, initializing, registerPassword, loginPassword, authenticateOtp, completeProfile, saveProfile, logout }),
-    [user, initializing, registerPassword, loginPassword, authenticateOtp, completeProfile, saveProfile, logout],
+    () => ({ user, initializing, registerPassword, loginPassword, authenticateOtp, authenticateDemoIvr, completeProfile, saveProfile, logout }),
+    [user, initializing, registerPassword, loginPassword, authenticateOtp, authenticateDemoIvr, completeProfile, saveProfile, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

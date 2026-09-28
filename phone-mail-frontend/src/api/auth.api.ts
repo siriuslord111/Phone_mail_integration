@@ -10,6 +10,31 @@ export interface VerifyResult {
 
 export type AuthPurpose = 'login' | 'register';
 
+export interface AuthOptions {
+  tollFreeNumber: string;
+  otpConfigured: boolean;
+  ivrDemoEnabled: boolean;
+}
+
+export async function getAuthOptions(): Promise<AuthOptions> {
+  if (DEMO_MODE) return { tollFreeNumber: '', otpConfigured: false, ivrDemoEnabled: false };
+  const { data } = await api.get('/auth/options');
+  return data;
+}
+
+export async function startDemoIvrRegistration(phone: string): Promise<{ demoOtp: string; message: string }> {
+  const { data } = await api.post('/auth/ivr/demo/start', { phone: toInternationalPhone(phone) });
+  return data;
+}
+
+export async function verifyDemoIvrRegistration(phone: string, otp: string): Promise<VerifyResult> {
+  const { data } = await api.post('/auth/ivr/demo/verify', {
+    phone: toInternationalPhone(phone),
+    otp,
+  });
+  return { token: data.token, user: data.user, isNewUser: data.isNewUser ?? false };
+}
+
 const DEMO_PASSWORD_ITERATIONS = 310_000;
 
 function toBase64(bytes: Uint8Array) {

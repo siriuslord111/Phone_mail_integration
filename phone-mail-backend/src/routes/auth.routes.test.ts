@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { after, before, test } from 'node:test';
 
 import type { Express } from 'express';
@@ -7,6 +8,8 @@ import type { User } from '../store';
 let baseUrl: string;
 let app: Express;
 let users: User[];
+let otpStore: typeof import('../store').otpStore;
+let authTokenSecret: string;
 let server: ReturnType<Express['listen']>;
 
 before(async () => {
@@ -17,6 +20,8 @@ before(async () => {
   ]);
   app = application;
   users = store.users;
+  otpStore = store.otpStore;
+  authTokenSecret = (await import('../config/env')).env.authTokenSecret;
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -93,4 +98,33 @@ test('password registration hashes credentials and issues an authenticated sessi
 
   const unauthenticatedResponse = await fetch(`${baseUrl}/api/users/me`);
   assert.equal(unauthenticatedResponse.status, 401);
+});
+
+test('account registration requires a valid one-time OTP and consumes it once', async () => {
+  const phone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
+  const otp = '123456';
+  const key = `register:${phone}`;
+  otpStore.set(key, {
+    hash: createHmac('sha256', authTokenSecret).update(`${phone}:${otp}`).digest('hex'),
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    attempts: 0,
+    purpose: 'register',
+  });
+
+  const registration = await fetch(`${baseUrl}/api/auth/register-otp`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone, otp, client: 'web' }),
+  });
+  assert.equal(registration.status, 201);
+  const registered = await registration.json() as { token: string; user: { phoneNumber: string } };
+  assert.ok(registered.token);
+  assert.equal(registered.user.phoneNumber, phone);
+
+  const replay = await fetch(`${baseUrl}/api/auth/register-otp`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone, otp, client: 'web' }),
+  });
+  assert.equal(replay.status, 401);
 });

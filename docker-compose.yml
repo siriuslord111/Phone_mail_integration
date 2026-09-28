@@ -53,6 +53,9 @@ services:
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-+15005550006}
+      TWILIO_TOLL_FREE_NUMBER: ${TWILIO_TOLL_FREE_NUMBER:-}
+      TWILIO_WEBHOOK_BASE_URL: ${TWILIO_WEBHOOK_BASE_URL:-}
+      IVR_DEMO_MODE: ${IVR_DEMO_MODE:-false}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -62,7 +65,7 @@ services:
       MAILPIT_API_URL: http://mailpit:8025
       MAILPIT_POLL_INTERVAL_MS: ${MAILPIT_POLL_INTERVAL_MS:-5000}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       db:
         condition: service_healthy

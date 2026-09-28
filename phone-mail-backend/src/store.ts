@@ -13,7 +13,7 @@ export type OtpChallenge = {
   hash: string;
   expiresAt: number;
   attempts: number;
-  purpose: 'login' | 'register';
+  purpose: 'login' | 'register' | 'ivr-register' | 'demo-ivr-register';
 };
 
 export type Message = {

@@ -1,5 +1,5 @@
 import { createHmac, randomInt, timingSafeEqual } from 'crypto';
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 
 import { env } from '../config/env';
 import { loginRateLimit, otpSendRateLimit } from '../middlewares/login-rate-limit';
@@ -16,6 +16,8 @@ const OTP_LIFETIME_MS = 5 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 128;
+const IVR_OTP_COOLDOWN_MS = 15 * 60 * 1000;
+const ivrOtpRequests = new Map<string, number>();
 
 function validPhone(phone: string) {
   return /^\+\d{8,15}$/.test(phone);
@@ -52,6 +54,59 @@ function otpMatches(phone: string, otp: string, expectedHash: string) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+type ChallengePurpose = 'login' | 'register' | 'ivr-register' | 'demo-ivr-register';
+
+function challengeKey(phone: string, purpose: ChallengePurpose) {
+  return `${purpose}:${phone}`;
+}
+
+function consumeChallenge(
+  phone: string,
+  suppliedOtp: unknown,
+  purpose: ChallengePurpose,
+): 'valid' | 'expired' | 'invalid' | 'locked' {
+  const key = challengeKey(phone, purpose);
+  const challenge = otpStore.get(key);
+  if (!challenge || challenge.expiresAt <= Date.now()) {
+    otpStore.delete(key);
+    return 'expired';
+  }
+
+  challenge.attempts += 1;
+  if (typeof suppliedOtp !== 'string' || !otpMatches(phone, suppliedOtp, challenge.hash)) {
+    if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
+      otpStore.delete(key);
+      return 'locked';
+    }
+    return 'invalid';
+  }
+
+  otpStore.delete(key);
+  return 'valid';
+}
+
+function twimlResponse(res: Response, status = 200) {
+  res.status(status).type('text/xml');
+}
+
+function twilioWebhook(req: Request, res: Response, next: NextFunction) {
+  if (!env.twilioAuthToken || !env.twilioWebhookBaseUrl.startsWith('https://')) {
+    twimlResponse(res, 503);
+    return res.send(TwilioService.sayIvrMessage('otpUnavailable'));
+  }
+
+  const signature = req.header('x-twilio-signature') ?? '';
+  const expectedUrl = `${env.twilioWebhookBaseUrl}${req.path}`;
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(400).send('Invalid Twilio webhook payload.');
+  }
+  const params = req.body as Record<string, string>;
+  if (!TwilioService.isWebhookSignatureValid(expectedUrl, signature, params)) {
+    return res.status(403).send('Invalid Twilio webhook signature.');
+  }
+  return next();
+}
+
 function validateCredentials(phoneInput: unknown, res: Response) {
   const phone = normalizePhone(String(phoneInput ?? ''));
   if (!validPhone(phone)) {
@@ -66,6 +121,12 @@ router.post('/send-otp', otpSendRateLimit, async (req: Request, res: Response) =
   if (!phone) return;
 
   const purpose = req.body?.purpose === 'register' ? 'register' : 'login';
+  if (purpose === 'register' && await findAccountByPhone(phone)) {
+    return res.status(409).json({
+      success: false,
+      message: 'An account already exists for this phone number. Log in instead.',
+    });
+  }
   const otp = String(randomInt(100_000, 1_000_000));
   try {
     await sendOtp(phone, otp);
@@ -77,7 +138,7 @@ router.post('/send-otp', otpSendRateLimit, async (req: Request, res: Response) =
     return res.status(503).json({ success: false, message, passwordFallbackAvailable: true });
   }
 
-  otpStore.set(phone, {
+  otpStore.set(challengeKey(phone, purpose), {
     hash: otpHash(phone, otp).toString('hex'),
     expiresAt: Date.now() + OTP_LIFETIME_MS,
     attempts: 0,
@@ -147,31 +208,31 @@ async function passwordLogin(req: Request, res: Response) {
   return issueSession(res, user, false);
 }
 
-function verifyChallenge(phone: string, suppliedOtp: unknown, purpose: 'login' | 'register', res: Response) {
-  const challenge = otpStore.get(phone);
-  if (!challenge || challenge.expiresAt <= Date.now()) {
-    otpStore.delete(phone);
-    res.status(401).json({ success: false, message: 'OTP is missing or expired. Request a new code.' });
-    return false;
-  }
-  if (challenge.purpose !== purpose) {
+function verifyChallenge(
+  phone: string,
+  suppliedOtp: unknown,
+  purpose: ChallengePurpose,
+  res: Response,
+) {
+  const challenge = otpStore.get(challengeKey(phone, purpose));
+  if (challenge && challenge.purpose !== purpose) {
     res.status(400).json({ success: false, message: 'Request a new OTP for this action.' });
     return false;
   }
-
-  challenge.attempts += 1;
-  if (typeof suppliedOtp !== 'string' || !otpMatches(phone, suppliedOtp, challenge.hash)) {
-    if (challenge.attempts >= OTP_MAX_ATTEMPTS) otpStore.delete(phone);
+  const result = consumeChallenge(phone, suppliedOtp, purpose);
+  if (result === 'expired') {
+    res.status(401).json({ success: false, message: 'OTP is missing or expired. Request a new code.' });
+    return false;
+  }
+  if (result !== 'valid') {
     res.status(401).json({
       success: false,
-      message: challenge.attempts >= OTP_MAX_ATTEMPTS
+      message: result === 'locked'
         ? 'Too many incorrect OTP attempts. Request a new code.'
         : 'Invalid OTP.',
     });
     return false;
   }
-
-  otpStore.delete(phone);
   return true;
 }
 
@@ -222,17 +283,192 @@ async function registerWithOtp(req: Request, res: Response) {
   });
 }
 
-router.post('/ivr/incoming', (req: Request, res: Response) => {
-  const twiml = TwilioService.generateIVRMenu();
-  res.type('text/xml');
-  return res.send(twiml);
+router.get('/options', (_req: Request, res: Response) => {
+  return res.json({
+    tollFreeNumber: env.twilioTollFreeNumber,
+    otpConfigured: Boolean(env.twoFactorApiKey.trim() && env.twoFactorOtpTemplate.trim()),
+    ivrDemoEnabled: env.ivrDemoMode,
+  });
 });
 
-router.post('/ivr/process', (req: Request, res: Response) => {
-  const { Digits, From } = req.body ?? {};
-  const twiml = TwilioService.handleIVRInput(String(Digits ?? ''), String(From ?? 'unknown'));
-  res.type('text/xml');
-  return res.send(twiml);
+router.post('/ivr/demo/start', otpSendRateLimit, async (req: Request, res: Response) => {
+  if (!env.ivrDemoMode) {
+    return res.status(404).json({ success: false, message: 'The local IVR demo is disabled.' });
+  }
+
+  const phone = normalizePhone(String(req.body?.phone ?? ''));
+  if (!validPhone(phone)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid phone number including country code.' });
+  }
+  if (await findAccountByPhone(phone)) {
+    return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
+  }
+
+  const demoOtp = String(randomInt(100_000, 1_000_000));
+  otpStore.set(challengeKey(phone, 'demo-ivr-register'), {
+    hash: otpHash(phone, demoOtp).toString('hex'),
+    expiresAt: Date.now() + OTP_LIFETIME_MS,
+    attempts: 0,
+    purpose: 'demo-ivr-register',
+  });
+  return res.json({
+    success: true,
+    demoOtp,
+    message: `Simulated PhoneMail call: press 1 to create your account. Your spoken verification code is ${demoOtp}.`,
+  });
 });
+
+router.post('/ivr/demo/verify', loginRateLimit, (req: Request, res: Response, next) => {
+  void verifyDemoIvrRegistration(req, res).catch(next);
+});
+
+async function verifyDemoIvrRegistration(req: Request, res: Response) {
+  if (!env.ivrDemoMode) {
+    return res.status(404).json({ success: false, message: 'The local IVR demo is disabled.' });
+  }
+
+  const phone = normalizePhone(String(req.body?.phone ?? ''));
+  const otp = req.body?.otp;
+  if (!validPhone(phone)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid phone number including country code.' });
+  }
+  if (!verifyChallenge(phone, otp, 'demo-ivr-register', res)) return;
+  if (await findAccountByPhone(phone)) {
+    return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
+  }
+
+  let user: User;
+  try {
+    user = await createAccount(phone, undefined, false);
+  } catch (error) {
+    if (error instanceof AccountAlreadyExistsError) {
+      return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
+    }
+    throw error;
+  }
+  return res.status(201).json({
+    success: true,
+    token: createSessionToken(user.id, user.phoneNumber),
+    isNewUser: true,
+    user: toUser(user),
+  });
+}
+
+router.post('/ivr/incoming', twilioWebhook, (req: Request, res: Response) => {
+  if (!env.twilioWebhookBaseUrl) {
+    twimlResponse(res, 503);
+    return res.send(TwilioService.sayIvrMessage('otpUnavailable'));
+  }
+  twimlResponse(res);
+  return res.send(TwilioService.generateIVRMenu(TwilioService.webhookUrl('/ivr/start-registration')));
+});
+
+router.post('/ivr/start-registration', twilioWebhook, (req: Request, res: Response, next) => {
+  void startIvrRegistration(req, res).catch(next);
+});
+
+async function startIvrRegistration(req: Request, res: Response) {
+  const now = Date.now();
+  for (const [number, requestedAt] of ivrOtpRequests) {
+    if (now - requestedAt >= IVR_OTP_COOLDOWN_MS) ivrOtpRequests.delete(number);
+  }
+
+  const callerNumber = normalizePhone(String(req.body?.From ?? ''));
+  if (!validPhone(callerNumber)) {
+    twimlResponse(res);
+    return res.send(TwilioService.sayIvrMessage('invalid'));
+  }
+  if (String(req.body?.Digits ?? '') !== '1') {
+    twimlResponse(res);
+    return res.send(TwilioService.sayIvrMessage('invalid'));
+  }
+
+  const registeredUser = await findAccountByPhone(callerNumber);
+  if (registeredUser) {
+    twimlResponse(res);
+    return res.send(TwilioService.sayIvrMessage('alreadyRegistered'));
+  }
+
+  let requestedAt = ivrOtpRequests.get(callerNumber) ?? 0;
+  const ivrKey = challengeKey(callerNumber, 'ivr-register');
+  const pendingChallenge = otpStore.get(ivrKey);
+  if (pendingChallenge && pendingChallenge.expiresAt <= Date.now()) {
+    otpStore.delete(ivrKey);
+    ivrOtpRequests.delete(callerNumber);
+    requestedAt = 0;
+  }
+  if (pendingChallenge && pendingChallenge.expiresAt > Date.now()) {
+    twimlResponse(res);
+    return res.send(TwilioService.promptForIvrOtp(TwilioService.webhookUrl('/ivr/verify-registration')));
+  }
+  if (now - requestedAt < IVR_OTP_COOLDOWN_MS) {
+    twimlResponse(res);
+    return res.send(TwilioService.sayIvrMessage('otpUnavailable'));
+  }
+  otpStore.delete(ivrKey);
+
+  const otp = String(randomInt(100_000, 1_000_000));
+  try {
+    await sendOtp(callerNumber, otp);
+  } catch (error) {
+    if (!(error instanceof OtpProviderError)) console.error('IVR OTP delivery failed:', error);
+    ivrOtpRequests.delete(callerNumber);
+    twimlResponse(res, 503);
+    return res.send(TwilioService.sayIvrMessage('otpUnavailable'));
+  }
+
+  ivrOtpRequests.set(callerNumber, Date.now());
+  otpStore.set(ivrKey, {
+    hash: otpHash(callerNumber, otp).toString('hex'),
+    expiresAt: Date.now() + OTP_LIFETIME_MS,
+    attempts: 0,
+    purpose: 'ivr-register',
+  });
+  twimlResponse(res);
+  return res.send(TwilioService.promptForIvrOtp(TwilioService.webhookUrl('/ivr/verify-registration')));
+}
+
+router.post('/ivr/verify-registration', twilioWebhook, (req: Request, res: Response, next) => {
+  void verifyIvrRegistration(req, res).catch(next);
+});
+
+async function verifyIvrRegistration(req: Request, res: Response) {
+  const callerNumber = normalizePhone(String(req.body?.From ?? ''));
+  if (!validPhone(callerNumber)) {
+    twimlResponse(res);
+    return res.send(TwilioService.sayIvrMessage('invalid'));
+  }
+
+  const digits = String(req.body?.Digits ?? '');
+  const challenge = otpStore.get(challengeKey(callerNumber, 'ivr-register'));
+  const result = consumeChallenge(
+    callerNumber,
+    /^\d{6}$/.test(digits) ? digits : undefined,
+    'ivr-register',
+  );
+  if (result !== 'valid') {
+    if (result === 'expired') ivrOtpRequests.delete(callerNumber);
+    twimlResponse(res);
+    return res.send(TwilioService.sayIvrMessage('otpInvalid'));
+  }
+  if (!challenge || challenge.purpose !== 'ivr-register') {
+    twimlResponse(res);
+    return res.send(TwilioService.sayIvrMessage('otpInvalid'));
+  }
+
+  ivrOtpRequests.delete(callerNumber);
+  try {
+    await createAccount(callerNumber, undefined, false);
+  } catch (error) {
+    if (error instanceof AccountAlreadyExistsError) {
+      twimlResponse(res);
+      return res.send(TwilioService.sayIvrMessage('alreadyRegistered'));
+    }
+    throw error;
+  }
+
+  twimlResponse(res);
+  return res.send(TwilioService.sayIvrMessage('created'));
+}
 
 export default router;
