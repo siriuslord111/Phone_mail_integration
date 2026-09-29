@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { Lock, Smartphone } from 'lucide-react';
+import { useLanguage } from '../context/LanguageProvider';
 
 /**
  * Shared chrome for the language, terms, registration, and login screens.
@@ -8,6 +9,7 @@ import { Lock, Smartphone } from 'lucide-react';
  */
 export default function AuthLayout() {
   const location = useLocation();
+  const { t } = useLanguage();
 
   return (
     <div className="flex h-dvh flex-col bg-[#eaf1fb] md:items-center md:justify-center md:bg-gradient-to-br md:from-[#0b3fbf] md:to-[#1a66ff] md:p-6">
@@ -25,9 +27,9 @@ export default function AuthLayout() {
             </span>
           </div>
           <p className="relative mt-3 text-[15px] leading-snug text-blue-50">
-            Your phone number is your email.
+            {t('phoneEmailDescription')}
             <br />
-            Sign in to start a conversation.
+            {t('signInConversation')}
           </p>
         </div>
 
@@ -38,7 +40,7 @@ export default function AuthLayout() {
 
           <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-slate-400">
             <Lock className="size-3.5" />
-            End-to-end encrypted
+            {t('encrypted')}
           </p>
         </div>
       </div>

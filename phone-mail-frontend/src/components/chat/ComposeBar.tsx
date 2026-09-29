@@ -3,6 +3,7 @@ import { Paperclip, Send, X } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { getErrorMessage } from '../../api/axios';
 import type { Message } from '../../types';
+import { useLanguage } from '../../context/LanguageProvider';
 
 interface ComposeBarProps {
   /** Show the subject input for a new email in this conversation. */
@@ -28,6 +29,7 @@ export function ComposeBar({
   sending,
   onOpenTraditional,
 }: ComposeBarProps) {
+  const { t } = useLanguage();
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [subjectOpen, setSubjectOpen] = useState(showSubject);
@@ -44,7 +46,7 @@ export function ComposeBar({
       setBody('');
       setFiles([]);
     } catch (error) {
-      setSendError(getErrorMessage(error, "Couldn't send the message. Your text and attachments are still here."));
+      setSendError(getErrorMessage(error, t('couldNotSendMessage')));
     }
   };
 
@@ -53,11 +55,11 @@ export function ComposeBar({
     const addedFiles = Array.from(selectedFiles);
     const oversized = addedFiles.find((file) => file.size > 10 * 1024 * 1024);
     if (oversized) {
-      setSendError(`${oversized.name} is larger than the 10 MB attachment limit.`);
+      setSendError(`${oversized.name} ${t('attachmentSizeLimit')}`);
       return;
     }
     if (files.length + addedFiles.length > 5) {
-      setSendError('You can attach up to 5 files to a message.');
+      setSendError(t('attachmentLimit'));
       return;
     }
     setSendError('');
@@ -77,7 +79,7 @@ export function ComposeBar({
         <input
           value={subject}
           onChange={(e) => onSubjectChange(e.target.value)}
-          placeholder="Subject"
+          placeholder={t('subject')}
           className="mb-2 w-full rounded-lg bg-slate-50 px-3 py-1.5 text-[13px] font-medium text-slate-600 outline-none placeholder:text-slate-400 focus:bg-slate-100"
         />
       )}
@@ -85,13 +87,13 @@ export function ComposeBar({
       {replyTarget && (
         <div className="mb-2 flex items-start gap-2 rounded-xl border-l-[3px] border-[#1a66ff] bg-blue-50 px-3 py-2 anim-pop">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold text-[#1a66ff]">Replying</p>
+            <p className="text-[11px] font-semibold text-[#1a66ff]">{t('replying')}</p>
             <p className="truncate text-[13px] text-slate-500">{replyTarget.body}</p>
           </div>
           <button
             type="button"
             onClick={onCancelReply}
-            aria-label="Cancel reply"
+            aria-label={t('cancelReply')}
             className="grid size-6 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-200"
           >
             <X className="size-3.5" />
@@ -108,7 +110,7 @@ export function ComposeBar({
               <button
                 type="button"
                 onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
-                aria-label={`Remove ${f.name}`}
+                aria-label={`${t('removeRecipient')} ${f.name}`}
                 className="grid size-4 place-items-center rounded-full hover:bg-slate-300"
               >
                 <X className="size-2.5" />
@@ -133,7 +135,7 @@ export function ComposeBar({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          aria-label="Attach file"
+          aria-label={t('attachFile')}
           className="grid size-11 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 active:scale-90"
         >
           <Paperclip className="size-5" />
@@ -145,7 +147,7 @@ export function ComposeBar({
           onClick={onOpenTraditional}
           className="mb-2 shrink-0 rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-500 transition hover:border-[#1a66ff] hover:text-[#1a66ff]"
         >
-          Full view
+          {t('fullView')}
         </button>
 
         <div
@@ -157,7 +159,7 @@ export function ComposeBar({
             onChange={(e) => setBody(e.target.value)}
             onFocus={() => !replyTarget && !subjectOpen && setSubjectOpen(true)}
             onKeyDown={handleKeyDown}
-            placeholder="Message"
+            placeholder={t('message')}
             className="max-h-28 w-full resize-none bg-transparent text-[15px] text-slate-800 outline-none placeholder:text-slate-400"
           />
         </div>
@@ -166,7 +168,7 @@ export function ComposeBar({
           type="button"
           onClick={handleSend}
           disabled={!canSend}
-          aria-label="Send"
+          aria-label={t('send')}
           className={cn(
             'grid size-11 shrink-0 place-items-center rounded-full text-white shadow-md shadow-blue-600/30 transition-all duration-150',
             canSend

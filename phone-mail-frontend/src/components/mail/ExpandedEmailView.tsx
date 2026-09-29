@@ -2,6 +2,7 @@ import { ArrowLeft, Paperclip, Reply } from 'lucide-react';
 import { Button } from '../common/Buttons';
 import { formatBytes, formatFullDate, getInitials, avatarColor } from '../../utils/formatters';
 import type { Message } from '../../types';
+import { useLanguage } from '../../context/LanguageProvider';
 
 interface ExpandedEmailViewProps {
   message: Message;
@@ -13,18 +14,19 @@ interface ExpandedEmailViewProps {
 
 /** Full-screen "traditional" reading view for a long email, opened by tapping a chat bubble. */
 export function ExpandedEmailView({ message, senderName, onBack, onReply }: ExpandedEmailViewProps) {
+  const { t } = useLanguage();
   return (
     <div className="flex h-full flex-col bg-white">
       <header className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
         <button
           onClick={onBack}
-          aria-label="Back to conversation"
+          aria-label={t('backToConversation')}
           className="grid size-10 shrink-0 place-items-center rounded-full text-slate-600 transition hover:bg-slate-100 active:scale-90"
         >
           <ArrowLeft className="size-5" />
         </button>
         <p className="truncate text-[15px] font-semibold text-slate-800">
-          {message.subject ?? 'Email'}
+          {message.subject ?? t('emailSubjectFallback')}
         </p>
       </header>
 
@@ -45,7 +47,7 @@ export function ExpandedEmailView({ message, senderName, onBack, onReply }: Expa
 
         {message.isReply && message.quotedText && (
           <div className="mt-4 rounded-xl border-l-[3px] border-[#1a66ff]/40 bg-blue-50 px-3.5 py-2.5 text-sm text-slate-500">
-            <p className="mb-0.5 text-xs font-semibold text-[#1a66ff]">In reply to</p>
+            <p className="mb-0.5 text-xs font-semibold text-[#1a66ff]">{t('inReplyTo')}</p>
             <p className="line-clamp-2">{message.quotedText}</p>
           </div>
         )}
@@ -57,7 +59,7 @@ export function ExpandedEmailView({ message, senderName, onBack, onReply }: Expa
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-6 space-y-2 border-t border-slate-100 pt-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              {message.attachments.length} attachment{message.attachments.length > 1 ? 's' : ''}
+              {message.attachments.length} {t('attachments')}
             </p>
             {message.attachments.map((att) => (
               <div key={att.id} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3.5 py-2.5">
@@ -78,7 +80,7 @@ export function ExpandedEmailView({ message, senderName, onBack, onReply }: Expa
         <div className="border-t border-slate-100 p-4">
           <Button variant="secondary" fullWidth onClick={() => onReply(message)} className="justify-center">
             <Reply className="size-4" />
-            Reply
+            {t('reply')}
           </Button>
         </div>
       )}

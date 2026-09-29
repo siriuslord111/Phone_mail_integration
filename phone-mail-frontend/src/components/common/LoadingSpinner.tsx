@@ -1,4 +1,5 @@
 import { cn } from '../../utils/cn';
+import { useLanguage } from '../../context/LanguageProvider';
 
 interface LoadingSpinnerProps {
   size?: 'sm' | 'md' | 'lg';
@@ -10,6 +11,7 @@ const SIZES = { sm: 'size-4 border-2', md: 'size-6 border-[2.5px]', lg: 'size-9 
 
 /** A simple rotating ring — used inside buttons and for full-screen waits. */
 export function LoadingSpinner({ size = 'md', className, label }: LoadingSpinnerProps) {
+  const { t } = useLanguage();
   return (
     <span role="status" className={cn('inline-flex items-center gap-2', className)}>
       <span
@@ -19,7 +21,7 @@ export function LoadingSpinner({ size = 'md', className, label }: LoadingSpinner
         )}
       />
       {label && <span className="text-sm text-slate-500">{label}</span>}
-      <span className="sr-only">Loading…</span>
+      <span className="sr-only">{t('loading')}</span>
     </span>
   );
 }

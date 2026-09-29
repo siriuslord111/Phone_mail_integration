@@ -16,23 +16,25 @@ import {
 import { cn } from '../utils/cn';
 import { getInitials } from '../utils/formatters';
 import { useAuth } from '../hooks/useAuth';
+import { useLanguage } from '../context/LanguageProvider';
+import type { TranslationKey } from '../utils/i18n';
 import type { LucideIcon } from 'lucide-react';
 import { ComposeModal } from '../components/mail/ComposeModal';
 
 interface NavItem {
   to: string;
-  label: string;
-  desktopLabel?: string;
+  label: TranslationKey;
+  desktopLabel?: TranslationKey;
   icon: LucideIcon;
   /** Mobile has a single unified Home (inbox + sent), so Sent is desktop-only, Gmail-style */
   desktopOnly?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { to: '/', label: 'Home', desktopLabel: 'Inbox', icon: Inbox },
-  { to: '/drafts', label: 'Drafts', icon: FileText },
-  { to: '/spam', label: 'Spam', icon: ShieldAlert },
-  { to: '/trash', label: 'Trash', icon: Trash2 },
+  { to: '/', label: 'inbox', desktopLabel: 'inbox', icon: Inbox },
+  { to: '/drafts', label: 'drafts', icon: FileText },
+  { to: '/spam', label: 'spam', icon: ShieldAlert },
+  { to: '/trash', label: 'trash', icon: Trash2 },
 ];
 
 export interface LayoutContext {
@@ -44,6 +46,7 @@ export default function MainLayout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const [params, setParams] = useSearchParams();
 
   const name = user?.name || user?.phone || '';
@@ -113,7 +116,7 @@ export default function MainLayout() {
           <div className="relative flex items-center justify-between">
             <button
               onClick={() => setDrawerOpen(true)}
-              aria-label="Open menu"
+              aria-label={t('openMenu')}
               className="flex items-center gap-2.5 rounded-xl transition active:scale-95"
             >
               <span className="grid size-9 place-items-center rounded-xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
@@ -126,7 +129,7 @@ export default function MainLayout() {
 
             <button
               onClick={() => setDrawerOpen(true)}
-              aria-label="Account"
+              aria-label={t('account')}
               className="grid size-10 place-items-center rounded-full bg-[#0b3fbf] text-sm font-semibold ring-2 ring-white/70 transition active:scale-90"
             >
               {accountInitials}
@@ -140,7 +143,7 @@ export default function MainLayout() {
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search people, emails or phone numbers"
+                placeholder={t('searchPlaceholder')}
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
               />
             </label>
@@ -153,7 +156,7 @@ export default function MainLayout() {
         <div className="flex w-56 items-center gap-2">
           <button
             onClick={() => setSidebarCollapsed((v) => !v)}
-            aria-label="Toggle sidebar"
+            aria-label={t('toggleSidebar')}
             className="grid size-11 place-items-center rounded-full text-slate-600 transition hover:bg-slate-200/70 active:scale-90"
           >
             <Menu className="size-5" />
@@ -175,7 +178,7 @@ export default function MainLayout() {
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search people, emails or phone numbers"
+              placeholder={t('searchPlaceholder')}
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
             />
           </label>
@@ -184,7 +187,7 @@ export default function MainLayout() {
         <div className="ml-auto flex items-center gap-2">
           <Link
             to="/settings"
-            aria-label="Settings"
+            aria-label={t('settings')}
             className="grid size-11 place-items-center rounded-full text-slate-600 transition hover:rotate-45 hover:bg-slate-200/70"
           >
             <Settings className="size-5" />
@@ -193,7 +196,7 @@ export default function MainLayout() {
           <div ref={menuRef} className="relative">
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              aria-label="Account menu"
+              aria-label={t('accountMenu')}
               className="grid size-10 place-items-center rounded-full bg-[#1a66ff] text-sm font-semibold text-white shadow-md shadow-blue-500/30 ring-2 ring-white transition active:scale-90"
             >
               {accountInitials}
@@ -229,7 +232,7 @@ export default function MainLayout() {
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-rose-600 transition hover:bg-rose-50"
                 >
                   <LogOut className="size-5" />
-                  Sign out
+                  {t('signOut')}
                 </button>
               </div>
             </div>
@@ -253,7 +256,7 @@ export default function MainLayout() {
             )}
           >
             <PenLine className="size-5 transition-transform duration-300 group-hover:-rotate-12" />
-            {!sidebarCollapsed && <span>New Email</span>}
+            {!sidebarCollapsed && <span>{t('newEmail')}</span>}
           </button>
 
           <nav className="flex flex-col gap-0.5">
@@ -262,11 +265,11 @@ export default function MainLayout() {
                 key={item.to}
                 to={item.to}
                 end={item.to === '/'}
-                title={sidebarCollapsed ? (item.desktopLabel ?? item.label) : undefined}
+                title={sidebarCollapsed ? t(item.desktopLabel ?? item.label) : undefined}
                 className={linkClass(sidebarCollapsed)}
               >
                 <item.icon className="size-5 shrink-0" />
-                {!sidebarCollapsed && <span className="truncate">{item.desktopLabel ?? item.label}</span>}
+                {!sidebarCollapsed && <span className="truncate">{t(item.desktopLabel ?? item.label)}</span>}
               </NavLink>
             ))}
           </nav>
@@ -290,7 +293,7 @@ export default function MainLayout() {
         >
           <span className="absolute inset-0 -z-10 rounded-2xl bg-[#1a66ff] opacity-40 blur-xl" />
           <PenLine className="size-5" />
-          New Email
+          {t('newEmail')}
         </button>
       )}
 
@@ -314,7 +317,7 @@ export default function MainLayout() {
             <span className="pointer-events-none absolute -bottom-10 left-10 size-24 rounded-full bg-white/10" />
             <button
               onClick={() => setDrawerOpen(false)}
-              aria-label="Close menu"
+              aria-label={t('closeMenu')}
               className="absolute right-3 top-3 grid size-9 place-items-center rounded-full bg-white/15 transition active:scale-90"
             >
               <X className="size-5" />
@@ -341,7 +344,7 @@ export default function MainLayout() {
                 }
               >
                 <item.icon className="size-5" />
-                {item.label}
+                {t(item.label)}
               </NavLink>
             ))}
           </div>
@@ -353,7 +356,7 @@ export default function MainLayout() {
               className="flex h-12 items-center gap-4 rounded-2xl px-4 text-[15px] text-slate-700 transition-colors active:bg-slate-100"
             >
               <Settings className="size-5" />
-              Settings
+              {t('settings')}
             </NavLink>
             <button
               onClick={() => {
@@ -363,7 +366,7 @@ export default function MainLayout() {
               className="flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-[15px] text-rose-600 transition-colors active:bg-rose-50"
             >
               <LogOut className="size-5" />
-              Sign out
+              {t('signOut')}
             </button>
           </div>
         </nav>
@@ -386,19 +389,19 @@ export default function MainLayout() {
             aria-labelledby="signout-title"
             className="w-full max-w-xs rounded-2xl bg-white p-5 shadow-2xl"
           >
-            <h2 id="signout-title" className="text-base font-semibold text-slate-900">Are you ready to sign out?</h2>
+            <h2 id="signout-title" className="text-base font-semibold text-slate-900">{t('signOutPrompt')}</h2>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 onClick={() => setLogoutConfirmOpen(false)}
                 className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 onClick={confirmLogout}
                 className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
               >
-                Sign out
+                {t('signOut')}
               </button>
             </div>
           </section>

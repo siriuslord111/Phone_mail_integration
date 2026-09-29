@@ -5,6 +5,7 @@ import { formatBytes, formatClock } from '../../utils/formatters';
 import { downloadAttachment } from '../../api/email.api';
 import { getErrorMessage } from '../../api/axios';
 import type { Message } from '../../types';
+import { useLanguage } from '../../context/LanguageProvider';
 
 interface MessageBubbleProps {
   message: Message;
@@ -19,6 +20,7 @@ const LONG_MESSAGE_CHARS = 320;
 const SWIPE_TRIGGER_PX = 56;
 
 export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: MessageBubbleProps) {
+  const { t } = useLanguage();
   const [dragX, setDragX] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -112,7 +114,7 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
 
         {isLong && (
           <span className={cn('mt-1 inline-block text-xs font-medium underline underline-offset-2', isOut ? 'text-blue-100' : 'text-[#1a66ff]')}>
-            Open full email
+            {t('openFullEmail')}
           </span>
         )}
 
@@ -132,13 +134,13 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
                 {att.url && (
                   <button
                     type="button"
-                    aria-label={`Download ${att.name}`}
+                    aria-label={`${t('downloadAttachment')} ${att.name}`}
                     className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-black/10"
                     onClick={(event) => {
                       event.stopPropagation();
                       setAttachmentError('');
                       void downloadAttachment(att.id, att.name).catch((error: unknown) => {
-                        setAttachmentError(getErrorMessage(error, "Couldn't download the attachment."));
+                        setAttachmentError(getErrorMessage(error, t('couldNotDownloadAttachment')));
                       });
                     }}
                   >
@@ -161,7 +163,7 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
         <div ref={menuRef} className="relative self-start">
           <button
             type="button"
-            aria-label="Message actions"
+            aria-label={t('messageActions')}
             onClick={() => setMenuOpen((open) => !open)}
             className="grid size-8 place-items-center rounded-full text-slate-400 hover:bg-white/80"
           >
@@ -171,37 +173,37 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
             <div className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-xl bg-white p-1 text-left text-xs text-slate-700 shadow-xl ring-1 ring-slate-200">
               {message.direction === 'in' && !message.replied && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onSwipeReply?.(message); }}>
-                  <Reply className="size-3.5" /> Reply
+                  <Reply className="size-3.5" /> {t('reply')}
                 </button>
               )}
               <button className="menu-action" onClick={() => { setMenuOpen(false); navigator.clipboard?.writeText(message.body); }}>
-                <Copy className="size-3.5" /> Copy
+                <Copy className="size-3.5" /> {t('copy')}
               </button>
               <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'star'); }}>
-                <Star className="size-3.5" /> {message.isStarred ? 'Unstar' : 'Star'}
+                <Star className="size-3.5" /> {message.isStarred ? t('unstar') : t('star')}
               </button>
               {message.direction === 'in' && !message.read && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'markRead'); }}>
-                  <CheckCheck className="size-3.5" /> Mark as read
+                  <CheckCheck className="size-3.5" /> {t('markAsRead')}
                 </button>
               )}
               {message.mailbox !== 'inbox' && message.mailbox !== 'sent' && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'restore'); }}>
-                  <Flag className="size-3.5" /> Move to inbox
+                  <Flag className="size-3.5" /> {t('moveToInbox')}
                 </button>
               )}
               {message.mailbox !== 'spam' && message.mailbox !== 'trash' && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'spam'); }}>
-                  <Flag className="size-3.5" /> Move to spam
+                  <Flag className="size-3.5" /> {t('moveToSpam')}
                 </button>
               )}
               {message.mailbox !== 'trash' ? (
                 <button className="menu-action text-rose-600" onClick={() => { setMenuOpen(false); onAction(message, 'trash'); }}>
-                  <Trash2 className="size-3.5" /> Move to trash
+                  <Trash2 className="size-3.5" /> {t('moveToTrash')}
                 </button>
               ) : (
                 <button className="menu-action text-rose-600" onClick={() => { setMenuOpen(false); onAction(message, 'delete'); }}>
-                  <Trash2 className="size-3.5" /> Delete permanently
+                  <Trash2 className="size-3.5" /> {t('deletePermanently')}
                 </button>
               )}
             </div>

@@ -8,6 +8,7 @@ import { MessageBubble } from '../components/chat/MessageBubble';
 import { ConversationProfilePanel } from '../components/chat/ConversationProfilePanel';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useLayoutContext } from '../hooks/useLayoutContext';
+import { useLanguage } from '../context/LanguageProvider';
 import {
   getMessages,
   listConversations,
@@ -19,6 +20,7 @@ import {
   updateMessage,
 } from '../api/email.api';
 import { formatDay, getContactInitials, avatarColor, normalizePhone } from '../utils/formatters';
+import type { TranslationKey } from '../utils/i18n';
 import type { Conversation, Folder, MailFilter, Message } from '../types';
 import type { MailDraft } from '../api/email.api';
 
@@ -29,15 +31,16 @@ const FOLDER_BY_PATH: Record<string, Folder> = {
   '/spam': 'spam',
   '/trash': 'trash',
 };
-const FOLDER_LABELS: Record<Folder, string> = {
-  inbox: 'Inbox',
-  sent: 'Sent',
-  drafts: 'Drafts',
-  spam: 'Spam',
-  trash: 'Trash',
+const FOLDER_LABELS: Record<Folder, TranslationKey> = {
+  inbox: 'inbox',
+  sent: 'sent',
+  drafts: 'drafts',
+  spam: 'spam',
+  trash: 'trash',
 };
 
 export default function Dashboard() {
+  const { t } = useLanguage();
   const { pathname } = useLocation();
   const { search } = useLayoutContext();
   const [params, setParams] = useSearchParams();
@@ -95,7 +98,7 @@ export default function Dashboard() {
         }`}
       >
         <div className="hidden items-center justify-between px-5 pt-4 md:flex">
-          <h1 className="text-xl font-semibold text-slate-900">{FOLDER_LABELS[folder]}</h1>
+          <h1 className="text-xl font-semibold text-slate-900">{t(FOLDER_LABELS[folder])}</h1>
         </div>
         {folder === 'drafts' ? (
           <DraftList
@@ -149,9 +152,10 @@ function DraftList({ drafts, loading, onOpen }: {
   loading: boolean;
   onOpen: (draft: MailDraft) => void;
 }) {
-  if (loading) return <div className="flex-1"><LoadingSpinner label="Loading drafts…" /></div>;
+  const { t } = useLanguage();
+  if (loading) return <div className="flex-1"><LoadingSpinner label={t('loadingDrafts')} /></div>;
   if (drafts.length === 0) return (
-    <div className="grid flex-1 place-items-center text-sm text-slate-400">No saved drafts</div>
+    <div className="grid flex-1 place-items-center text-sm text-slate-400">{t('noSavedDrafts')}</div>
   );
   return (
     <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto">
@@ -162,10 +166,10 @@ function DraftList({ drafts, loading, onOpen }: {
             className="w-full px-5 py-4 text-left transition hover:bg-slate-50"
           >
             <p className="truncate text-sm font-medium text-slate-800">
-              {draft.recipients.length ? `To: ${draft.recipients.join(', ')}` : 'No recipient'}
+              {draft.recipients.length ? `${t('to')}: ${draft.recipients.join(', ')}` : t('noRecipient')}
             </p>
-            <p className="mt-1 truncate text-sm text-slate-600">{draft.subject || '(no subject)'}</p>
-            <p className="mt-1 truncate text-xs text-slate-400">{draft.body || 'Empty draft'}</p>
+            <p className="mt-1 truncate text-sm text-slate-600">{draft.subject || t('noSubject')}</p>
+            <p className="mt-1 truncate text-xs text-slate-400">{draft.body || t('emptyDraft')}</p>
           </button>
         </li>
       ))}
@@ -174,14 +178,15 @@ function DraftList({ drafts, loading, onOpen }: {
 }
 
 function EmptyPane() {
+  const { t } = useLanguage();
   return (
     <div className="hidden flex-1 flex-col items-center justify-center gap-3 text-center md:flex">
       <span className="grid size-16 place-items-center rounded-full bg-blue-50 text-[#1a66ff]">
         <Info className="size-7" />
       </span>
-      <p className="font-medium text-slate-600">Select a conversation</p>
+      <p className="font-medium text-slate-600">{t('selectConversation')}</p>
       <p className="max-w-xs text-sm text-slate-400">
-        Choose a chat from the list, or start a new email.
+        {t('chooseChatOrEmail')}
       </p>
     </div>
   );
@@ -199,6 +204,7 @@ interface ChatPanelProps {
 }
 
 function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTraditional, onRead, onSaveNickname }: ChatPanelProps) {
+  const { t } = useLanguage();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
@@ -245,7 +251,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
     return (
       <ExpandedEmailView
         message={openedMessage}
-        senderName={openedMessage.direction === 'in' ? conversation.title : 'You'}
+        senderName={openedMessage.direction === 'in' ? conversation.title : t('you')}
         onBack={() => setOpenedMessage(null)}
         onReply={(m) => {
           setOpenedMessage(null);
@@ -267,7 +273,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
           }}
           onSaveNickname={async (nickname) => {
             const contactPhone = conversation.participants[0]?.phone;
-            if (!contactPhone) throw new Error('Contact phone number is unavailable.');
+            if (!contactPhone) throw new Error(t('phoneUnavailable'));
             await onSaveNickname(contactPhone, nickname);
           }}
         />
@@ -275,7 +281,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
       <header className="flex shrink-0 items-center gap-3 border-b border-slate-100 bg-white px-3 py-2.5 md:px-5 md:py-3.5">
         <button
           onClick={onBack}
-          aria-label="Back to list"
+          aria-label={t('backToList')}
           className="grid size-10 shrink-0 place-items-center rounded-full text-slate-600 transition hover:bg-slate-100 active:scale-90 md:hidden"
         >
           <ArrowLeft className="size-5" />
@@ -283,7 +289,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
 
         <button
           onClick={() => setShowConversationProfile(true)}
-          aria-label="View contact profile"
+          aria-label={t('viewContactProfile')}
           className="grid size-10 shrink-0 place-items-center rounded-full text-sm font-semibold text-white shadow-sm"
           style={{
             backgroundColor: avatarColor(singlePhone ?? conversation.title),
@@ -299,14 +305,14 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
           <p className="truncate text-[15px] font-semibold text-slate-900">{conversation.title}</p>
           <p className="truncate text-xs text-slate-400">
             {conversation.isGroup
-              ? `${conversation.participants.length} participants`
+              ? `${conversation.participants.length} ${t('groupParticipants')}`
               : singlePhone && `${normalizePhone(singlePhone)}@phonemail.com`}
           </p>
         </div>
 
         <button
           onClick={() => onFavouriteToggle(!conversation.isFavourite)}
-          aria-label={conversation.isFavourite ? 'Remove from favourites' : 'Add to favourites'}
+          aria-label={conversation.isFavourite ? t('removeFromFavourites') : t('addToFavourites')}
           className="grid size-9 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100"
         >
           <Star className={`size-5 ${conversation.isFavourite ? 'fill-amber-400 text-amber-400' : ''}`} />
@@ -316,7 +322,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
       <div className="chat-wallpaper flex-1 space-y-3 overflow-y-auto px-3 py-4 md:px-6">
         {loading ? (
           <div className="grid h-full place-items-center">
-            <LoadingSpinner label="Loading messages…" />
+            <LoadingSpinner label={t('loadingMessages')} />
           </div>
         ) : (
           groupByDay(messages).map(([day, msgs]) => (

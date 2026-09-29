@@ -1,4 +1,16 @@
+import { readLanguage, translate, type LanguageCode } from './i18n';
+
 const DOMAIN = 'phonemail.com';
+const LOCALES: Record<LanguageCode, string> = {
+  en: 'en-IN',
+  hi: 'hi-IN',
+  ta: 'ta-IN',
+  te: 'te-IN',
+  bn: 'bn-IN',
+  mr: 'mr-IN',
+};
+
+const currentLocale = () => LOCALES[readLanguage()];
 
 /** Keep digits only. */
 export const digitsOnly = (value: string) => value.replace(/\D/g, '');
@@ -50,7 +62,7 @@ const daysAgo = (d: Date) => Math.round((startOfDay(new Date()) - startOfDay(d))
 
 export function formatClock(iso: string) {
   return new Date(iso)
-    .toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+    .toLocaleTimeString(currentLocale(), { hour: 'numeric', minute: '2-digit', hour12: true })
     .toUpperCase();
 }
 
@@ -59,10 +71,11 @@ export function formatListTime(iso: string) {
   const d = new Date(iso);
   const diff = daysAgo(d);
   if (diff <= 0) return formatClock(iso);
-  if (diff === 1) return 'Yesterday';
-  if (diff < 7) return d.toLocaleDateString('en-IN', { weekday: 'short' });
+  const language = readLanguage();
+  if (diff === 1) return translate('yesterday', language);
+  if (diff < 7) return d.toLocaleDateString(currentLocale(), { weekday: 'short' });
   const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString('en-IN', {
+  return d.toLocaleDateString(currentLocale(), {
     day: 'numeric',
     month: 'short',
     ...(sameYear ? {} : { year: 'numeric' }),
@@ -73,13 +86,14 @@ export function formatListTime(iso: string) {
 export function formatDay(iso: string) {
   const d = new Date(iso);
   const diff = daysAgo(d);
-  if (diff <= 0) return 'Today';
-  if (diff === 1) return 'Yesterday';
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const language = readLanguage();
+  if (diff <= 0) return translate('today', language);
+  if (diff === 1) return translate('yesterday', language);
+  return d.toLocaleDateString(currentLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 export function formatFullDate(iso: string) {
-  return new Date(iso).toLocaleString('en-IN', {
+  return new Date(iso).toLocaleString(currentLocale(), {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

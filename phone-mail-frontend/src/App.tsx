@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import './App.css';
 import { AuthProvider } from './context/AuthProvider';
+import { LanguageProvider } from './context/LanguageProvider';
 import { SocketProvider } from './context/SocketProvider';
 import { useAuth } from './hooks/useAuth';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
@@ -65,10 +66,12 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <SocketProvider>
-        <AppRoutes />
-      </SocketProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <SocketProvider>
+          <AppRoutes />
+        </SocketProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }

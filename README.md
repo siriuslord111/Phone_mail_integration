@@ -23,6 +23,11 @@ conversation marks its incoming messages as read. Drafts can be saved, reopened,
 sent, or discarded; Spam and Trash support moving messages, restoring them to
 Inbox, and permanently deleting messages from Trash.
 
+The web interface supports English, Hindi, Tamil, Telugu, Bengali, and Marathi.
+Choose a language at startup or change it later in Settings → Language; the
+choice is saved in the browser. User-written messages and profile details are
+not automatically translated.
+
 The 2Factor integration expects a valid account API key and an approved OTP SMS
 template; delivery cannot be tested until those credentials are supplied.
 Web and call-based account registration both create accounts only after an OTP

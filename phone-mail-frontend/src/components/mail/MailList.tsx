@@ -2,13 +2,15 @@ import { Paperclip, Search, Star, Users } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatListTime, getContactInitials, avatarColor } from '../../utils/formatters';
 import { MailListSkeleton } from '../common/LoadingSpinner';
+import { useLanguage } from '../../context/LanguageProvider';
 import type { Conversation, MailFilter } from '../../types';
+import type { TranslationKey } from '../../utils/i18n';
 
-const FILTERS: { id: MailFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'unread', label: 'Unread' },
-  { id: 'favourites', label: 'Favourites' },
-  { id: 'attachments', label: 'Attachments' },
+const FILTERS: { id: MailFilter; label: TranslationKey }[] = [
+  { id: 'all', label: 'allFilter' },
+  { id: 'unread', label: 'unreadFilter' },
+  { id: 'favourites', label: 'favouritesFilter' },
+  { id: 'attachments', label: 'attachmentsFilter' },
 ];
 
 interface MailListProps {
@@ -32,6 +34,7 @@ export function MailList({
   search,
   compact = false,
 }: MailListProps) {
+  const { t } = useLanguage();
   return (
     <div className="flex h-full flex-col">
       <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-3 pt-3 md:px-5 md:pt-4">
@@ -46,7 +49,7 @@ export function MailList({
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
             )}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
       </div>
@@ -83,7 +86,7 @@ export function MailList({
                     </div>
                     <div className="mt-0.5 flex items-center justify-between gap-2">
                       <p className={cn('truncate text-[13px]', c.unreadCount > 0 ? 'text-slate-600' : 'text-slate-400')}>
-                        {c.lastMessage.direction === 'out' && <span className="text-slate-400">You: </span>}
+                        {c.lastMessage.direction === 'out' && <span className="text-slate-400">{t('sentPrefix')} </span>}
                         {c.lastMessage.hasAttachment && <Paperclip className="mr-1 inline size-3 -translate-y-px" />}
                         {c.lastMessage.preview}
                       </p>
@@ -132,25 +135,26 @@ function Avatar({ conversation }: { conversation: Conversation }) {
 }
 
 function EmptyState({ search, filter }: { search: string; filter: MailFilter }) {
+  const { t } = useLanguage();
   if (search) {
     return (
       <div className="flex flex-col items-center gap-3 px-6 py-20 text-center">
         <span className="grid size-14 place-items-center rounded-full bg-slate-100 text-slate-300">
           <Search className="size-6" />
         </span>
-        <p className="font-medium text-slate-600">No results for "{search}"</p>
+        <p className="font-medium text-slate-600">{t('noSearchResults')} "{search}"</p>
         <p className="max-w-[22rem] text-sm text-slate-400">
-          Try a name, phone number, or part of an email address.
+          {t('trySearchHint')}
         </p>
       </div>
     );
   }
 
-  const copy: Record<MailFilter, { title: string; body: string }> = {
-    all: { title: 'Nothing here yet', body: 'New emails and chats will show up in this list.' },
-    unread: { title: "You're all caught up", body: 'Unread conversations will appear here.' },
-    favourites: { title: 'No favourites yet', body: 'Star a conversation to pin it here.' },
-    attachments: { title: 'No attachments yet', body: 'Emails with files will be listed here.' },
+  const copy: Record<MailFilter, { title: TranslationKey; body: TranslationKey }> = {
+    all: { title: 'nothingHereYet', body: 'newEmailsChatsHint' },
+    unread: { title: 'caughtUp', body: 'unreadAppearHere' },
+    favourites: { title: 'noFavouritesYet', body: 'starConversationHint' },
+    attachments: { title: 'noAttachmentsYet', body: 'emailsWithFilesHint' },
   };
   const { title, body } = copy[filter];
 
@@ -159,8 +163,8 @@ function EmptyState({ search, filter }: { search: string; filter: MailFilter }) 
       <span className="grid size-14 place-items-center rounded-full bg-blue-50 text-[#1a66ff]">
         <Star className="size-6" />
       </span>
-      <p className="font-medium text-slate-600">{title}</p>
-      <p className="max-w-[22rem] text-sm text-slate-400">{body}</p>
+      <p className="font-medium text-slate-600">{t(title)}</p>
+      <p className="max-w-[22rem] text-sm text-slate-400">{t(body)}</p>
     </div>
   );
 }

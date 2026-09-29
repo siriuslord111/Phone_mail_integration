@@ -5,6 +5,7 @@ import { deleteDraft, listDrafts, saveDraft, sendMessage } from '../../api/email
 import type { MailDraft } from '../../api/email.api';
 import { digitsOnly, normalizePhone } from '../../utils/formatters';
 import { getErrorMessage } from '../../api/axios';
+import { useLanguage } from '../../context/LanguageProvider';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -24,6 +25,7 @@ interface ComposeModalProps {
 }
 
 export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModalProps) {
+  const { t } = useLanguage();
   const [to, setTo] = useState(lockedTo ? [normalizeLockedRecipient(lockedTo)] : []);
   const [toInput, setToInput] = useState('');
   const [subject, setSubject] = useState('');
@@ -44,10 +46,10 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
       setBody(draft.body);
       setActiveDraftId(draft.id);
     }).catch((loadError) => {
-      if (!cancelled) setError(getErrorMessage(loadError, "Couldn't load this draft."));
+      if (!cancelled) setError(getErrorMessage(loadError, t('couldNotLoadDraft')));
     });
     return () => { cancelled = true; };
-  }, [draftId]);
+  }, [draftId, t]);
 
   const persistDraft = async (): Promise<MailDraft | undefined> => {
     if (to.length === 0 && !subject.trim() && !body.trim()) return undefined;
@@ -63,7 +65,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
       setActiveDraftId(draft.id);
       return draft;
     } catch (saveError) {
-      setError(getErrorMessage(saveError, "Couldn't save the draft."));
+      setError(getErrorMessage(saveError, t('couldNotSaveDraft')));
       return undefined;
     } finally {
       setSavingDraft(false);
@@ -79,7 +81,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
       try {
         await deleteDraft(activeDraftId);
       } catch (discardError) {
-        setError(getErrorMessage(discardError, "Couldn't discard the draft."));
+        setError(getErrorMessage(discardError, t('couldNotDiscardDraft')));
         return;
       }
     }
@@ -93,7 +95,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
 
   const addRecipient = () => {
     if (!canAddRecipient) {
-      setError('Enter a valid email address or a 10-digit PhoneMail number.');
+      setError(t('invalidRecipient'));
       return;
     }
     const recipient = canAddEmail
@@ -106,11 +108,11 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
 
   const handleSend = async () => {
     if (to.length === 0) {
-      setError('Add at least one recipient.');
+      setError(t('addRecipient'));
       return;
     }
     if (!body.trim()) {
-      setError('Write a message before sending.');
+      setError(t('writeMessage'));
       return;
     }
     setSending(true);
@@ -120,7 +122,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
       if (activeDraftId) await deleteDraft(activeDraftId);
       onSent();
     } catch (sendError) {
-      setError(getErrorMessage(sendError, "Couldn't send. Check your SMTP setup and try again."));
+      setError(getErrorMessage(sendError, t('couldNotSend')));
     } finally {
       setSending(false);
     }
@@ -130,10 +132,10 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
     <div className="fixed inset-0 z-40 flex flex-col bg-white md:items-center md:justify-center md:bg-slate-900/40 md:backdrop-blur-sm">
       <div className="anim-sheet flex h-full w-full flex-col md:h-auto md:max-h-[85vh] md:max-w-lg md:rounded-3xl md:shadow-2xl">
         <header className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 pt-[max(env(safe-area-inset-top),0.75rem)] md:pt-3">
-          <h2 className="text-[15px] font-semibold text-slate-900">New email</h2>
+          <h2 className="text-[15px] font-semibold text-slate-900">{t('newEmail')}</h2>
           <button
             onClick={() => { void closeAndSave(); }}
-            aria-label="Close"
+            aria-label={t('close')}
             className="grid size-9 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100"
           >
             <X className="size-5" />
@@ -142,7 +144,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
 
         <div className="flex-1 space-y-0 overflow-y-auto bg-white">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-4 py-2.5">
-            <span className="text-sm text-slate-400">To</span>
+            <span className="text-sm text-slate-400">{t('to')}</span>
             {to.map((recipient) => (
               <span
                 key={recipient}
@@ -152,7 +154,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
                 {!lockedTo && (
                   <button
                     onClick={() => setTo((prev) => prev.filter((entry) => entry !== recipient))}
-                    aria-label={`Remove ${recipient}`}
+                    aria-label={`${t('removeRecipient')} ${recipient}`}
                     className="grid size-4 place-items-center rounded-full hover:bg-blue-100"
                   >
                     <X className="size-2.5" />
@@ -165,7 +167,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
                 {canAddEmail ? toInput.trim() : `${inputDigits}@phonemail.com`}
                 <button
                   onClick={addRecipient}
-                  aria-label={`Add ${canAddEmail ? toInput.trim() : `${inputDigits}@phonemail.com`}`}
+                  aria-label={`${t('add')} ${canAddEmail ? toInput.trim() : `${inputDigits}@phonemail.com`}`}
                   className="grid size-7 place-items-center rounded-full bg-[#1a66ff] text-white transition hover:bg-[#0b4fe0]"
                 >
                   <Plus className="size-4" />
@@ -179,7 +181,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
                   setError('');
                 }}
                 onKeyDown={(event) => event.key === 'Enter' && (event.preventDefault(), addRecipient())}
-                placeholder="Email address or phone number"
+                placeholder={t('emailOrPhonePlaceholder')}
                 inputMode="email"
                 className="min-w-[8rem] flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
               />
@@ -189,14 +191,14 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
           <input
             value={subject}
             onChange={(event) => setSubject(event.target.value)}
-            placeholder="Subject"
+            placeholder={t('subject')}
             className="w-full border-b border-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 outline-none placeholder:text-slate-400"
           />
 
           <textarea
             value={body}
             onChange={(event) => setBody(event.target.value)}
-            placeholder="Write your message…"
+            placeholder={t('writeMessagePlaceholder')}
             rows={10}
             className="w-full resize-none px-4 py-3 text-[15px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400"
           />
@@ -207,7 +209,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
         <footer className="flex shrink-0 items-center justify-between border-t border-slate-100 px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
           <button
             onClick={() => { void discardDraft(); }}
-            aria-label="Discard"
+            aria-label={t('discard')}
             className="grid size-10 place-items-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
           >
             <Trash2 className="size-5" />
@@ -218,9 +220,9 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
               onClick={() => { void persistDraft(); }}
               variant="secondary"
             >
-              Save draft
+              {t('saveDraft')}
             </Button>
-            <Button loading={sending} onClick={handleSend}>Send</Button>
+            <Button loading={sending} onClick={handleSend}>{t('send')}</Button>
           </div>
         </footer>
       </div>
