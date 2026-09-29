@@ -183,7 +183,6 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
 
         <div className={cn('mt-1 flex items-center justify-end gap-1 text-[11px]', isOut ? 'text-blue-100/90' : 'text-slate-400')}>
           <span>{formatClock(message.createdAt)}</span>
-          {isOut && <CheckCheck className={cn('size-3.5', message.status === 'read' && 'text-sky-200')} />}
           {message.isStarred && <Star className="size-3 fill-amber-400 text-amber-400" />}
         </div>
       </div>

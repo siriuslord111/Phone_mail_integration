@@ -20,8 +20,9 @@ synchronizes the Prisma schema before starting.
 
 The web client presents Inbox and Sent together as conversations. Opening a
 conversation marks its incoming messages as read. Drafts can be saved, reopened,
-sent, or discarded; Spam and Trash support moving messages, restoring them to
-Inbox, and permanently deleting messages from Trash.
+sent, or discarded, with up to five attachments (10 MB each) preserved when a
+draft is saved and reopened. Spam and Trash support moving messages, restoring
+them to Inbox, and permanently deleting messages from Trash.
 Composing to multiple PhoneMail accounts creates a persistent group chat, while
 later messages to an individual account remain in that one-to-one conversation.
 External email recipients continue through normal email delivery.

@@ -599,10 +599,9 @@ router.post('/messages', (req, res, next) => {
     }
   }
   const submittedSubject = String(req.body?.subject ?? '').trim();
-  let subject = submittedSubject || 'New message';
+  let subject = submittedSubject;
   const body = typeof req.body?.body === 'string' ? req.body.body : '';
   const files = Array.isArray(req.files) ? req.files : [];
-  if (!body.trim() && files.length === 0) return res.status(400).json({ message: 'Write a message or attach a file before sending.' });
   if (subject.length > 200 || /[\r\n]/.test(subject)) {
     return res.status(400).json({ message: 'Subject must be 200 characters or fewer and contain no line breaks.' });
   }
@@ -958,31 +957,102 @@ router.get('/drafts', (req, res, next) => {
   void prisma.mailDraft.findMany({
     where: { userId: res.locals.authenticatedUser.id },
     orderBy: { updatedAt: 'desc' },
-  }).then((drafts) => res.json({ drafts })).catch(next);
+    include: { attachments: { select: { id: true, filename: true, mimeType: true, size: true } } },
+  }).then((drafts) => res.json({
+    drafts: drafts.map(({ attachments, ...draft }) => ({
+      ...draft,
+      attachments: attachments.map(({ id, filename, mimeType, size }) => ({
+        id,
+        name: filename,
+        mimeType,
+        size,
+      })),
+    })),
+  })).catch(next);
 });
 
-router.post('/drafts', async (req, res, next) => {
+router.get('/drafts/:id/attachments/:attachmentId', async (req, res, next) => {
+  try {
+    const attachment = await prisma.mailDraftAttachment.findFirst({
+      where: {
+        id: req.params.attachmentId,
+        draftId: req.params.id,
+        draft: { userId: res.locals.authenticatedUser.id },
+      },
+      select: { filename: true, mimeType: true, content: true },
+    });
+    if (!attachment) return res.status(404).json({ message: 'Draft attachment not found.' });
+    res.type(attachment.mimeType || 'application/octet-stream');
+    res.attachment(attachment.filename);
+    return res.send(Buffer.from(attachment.content));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/drafts', parseAttachments, async (req, res, next) => {
   try {
     const { id, recipients, subject, body } = req.body ?? {};
-    if (!Array.isArray(recipients) || !recipients.every((item: unknown) => typeof item === 'string')) {
+    let parsedRecipients = recipients;
+    if (typeof parsedRecipients === 'string') {
+      try {
+        parsedRecipients = JSON.parse(parsedRecipients);
+      } catch {
+        return res.status(400).json({ message: 'Recipients must be a list of addresses.' });
+      }
+    }
+    if (!Array.isArray(parsedRecipients) || !parsedRecipients.every((item: unknown) => typeof item === 'string')) {
       return res.status(400).json({ message: 'Recipients must be a list of addresses.' });
     }
-    const safeRecipients = recipients.map((item: string) => item.trim()).filter(Boolean);
+    const safeRecipients = parsedRecipients.map((item: string) => item.trim()).filter(Boolean);
     const values = {
       recipients: safeRecipients,
       subject: typeof subject === 'string' ? subject.slice(0, 200) : '',
       body: typeof body === 'string' ? body : '',
     };
+    const files = Array.isArray(req.files) ? req.files : [];
     const userId = res.locals.authenticatedUser.id;
-    let draft;
-    if (typeof id === 'string') {
-      const existing = await prisma.mailDraft.findFirst({ where: { id, userId } });
-      if (!existing) return res.status(404).json({ message: 'Draft not found.' });
-      draft = await prisma.mailDraft.update({ where: { id }, data: values });
-    } else {
-      draft = await prisma.mailDraft.create({ data: { ...values, userId } });
-    }
-    return res.status(200).json({ draft });
+    const draftId = await prisma.$transaction(async (transaction) => {
+      let savedDraft;
+      if (typeof id === 'string') {
+        const existing = await transaction.mailDraft.findFirst({ where: { id, userId } });
+        if (!existing) return undefined;
+        savedDraft = await transaction.mailDraft.update({ where: { id }, data: values });
+        await transaction.mailDraftAttachment.deleteMany({ where: { draftId: id } });
+      } else {
+        savedDraft = await transaction.mailDraft.create({ data: { ...values, userId } });
+      }
+      if (files.length) {
+        await transaction.mailDraftAttachment.createMany({
+          data: files.map((file) => ({
+            draftId: savedDraft.id,
+            filename: file.originalname,
+            mimeType: file.mimetype,
+            size: file.size,
+            content: new Uint8Array(file.buffer),
+          })),
+        });
+      }
+      return savedDraft.id;
+    });
+    if (!draftId) return res.status(404).json({ message: 'Draft not found.' });
+    const draft = await prisma.mailDraft.findFirst({
+      where: { id: draftId, userId },
+      include: { attachments: { select: { id: true, filename: true, mimeType: true, size: true } } },
+    });
+    if (!draft) return res.status(404).json({ message: 'Draft not found.' });
+    const { attachments, ...draftFields } = draft;
+    return res.status(200).json({
+      draft: {
+        ...draftFields,
+        attachments: attachments.map(({ id: attachmentId, filename, mimeType, size }) => ({
+          id: attachmentId,
+          name: filename,
+          mimeType,
+          size,
+        })),
+      },
+    });
   } catch (error) {
     return next(error);
   }

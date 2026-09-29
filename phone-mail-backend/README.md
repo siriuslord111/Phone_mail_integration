@@ -62,4 +62,5 @@ Sending from a registered PhoneMail account to another registered
 inbox and saved to PostgreSQL; Gmail SMTP and public DNS are not used for that
 path. Sending to external email addresses continues to use SMTP. Up to five
 attachments (10 MB each) are stored with local messages and delivered with
-external email.
+external email. Full-view compose drafts also store attachments and restore
+them when the draft is reopened.
