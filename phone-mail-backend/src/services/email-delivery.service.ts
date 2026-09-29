@@ -22,6 +22,8 @@ export async function deliverEmail(input: {
   recipients: string[];
   subject: string;
   body: string;
+  inReplyToId?: string;
+  inReplyToHeader?: string;
   attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
 }) {
   const localRecipients: User[] = [];
@@ -41,12 +43,14 @@ export async function deliverEmail(input: {
 
   let externalDelivery: { delivered: boolean } | undefined;
   let senderAttachments: Array<{ id: string; filename: string; size: number }> = [];
+  let senderMessage: { id: string; replyToId: string | null } | undefined;
   if (externalRecipients.length) {
     externalDelivery = await sendOutboundEmail({
       from: input.sender.email,
       to: externalRecipients,
       subject: input.subject,
       body: input.body,
+      inReplyTo: input.inReplyToHeader,
       attachments: input.attachments,
     });
   }
@@ -64,6 +68,7 @@ export async function deliverEmail(input: {
         direction: 'out',
         mailbox: 'sent',
         isRead: true,
+        replyToId: input.inReplyToId,
       },
       {
         messageId: randomUUID(),
@@ -103,6 +108,7 @@ export async function deliverEmail(input: {
       (copy) => copy.userId === input.sender.id && copy.peerAddress === localRecipients[0].phoneNumber,
     );
     senderAttachments = senderCopy?.attachments ?? [];
+    if (senderCopy) senderMessage = { id: senderCopy.id, replyToId: senderCopy.replyToId };
   }
 
   return {
@@ -111,5 +117,6 @@ export async function deliverEmail(input: {
     externalRecipients: externalRecipients.length,
     externalDelivery,
     attachments: senderAttachments,
+    senderMessage,
   };
 }

@@ -80,3 +80,4 @@ export interface SendPayload {
 }
 
 export type MessageAction = 'star' | 'spam' | 'trash' | 'restore' | 'delete' | 'markRead';
+export type ConversationAction = 'delete' | 'markRead' | 'markUnread' | 'spam';

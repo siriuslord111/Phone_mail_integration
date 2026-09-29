@@ -15,13 +15,14 @@ import {
   listDrafts,
   sendMessage,
   saveContactNickname,
+  updateConversationAction,
   toggleFavourite,
   updateConversation,
   updateMessage,
 } from '../api/email.api';
 import { formatDay, getContactInitials, avatarColor, normalizePhone } from '../utils/formatters';
 import type { TranslationKey } from '../utils/i18n';
-import type { Conversation, Folder, MailFilter, Message } from '../types';
+import type { Conversation, ConversationAction, Folder, MailFilter, Message } from '../types';
 import type { MailDraft } from '../api/email.api';
 
 const FOLDER_BY_PATH: Record<string, Folder> = {
@@ -69,6 +70,7 @@ export default function Dashboard() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [drafts, setDrafts] = useState<MailDraft[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  const [conversationActionError, setConversationActionError] = useState('');
   const [conversationListWidth, setConversationListWidth] = useState(readConversationListWidth);
   const splitPaneRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef(false);
@@ -108,6 +110,16 @@ export default function Dashboard() {
     () => listConversations(filter, search, folder).then(setConversations),
     [filter, folder, search],
   );
+  const handleConversationAction = async (conversation: Conversation, action: ConversationAction) => {
+    setConversationActionError('');
+    try {
+      await updateConversationAction(conversation.id, action);
+      await refreshList();
+      if ((action === 'delete' || action === 'spam') && chatId === conversation.id) closeChat();
+    } catch {
+      setConversationActionError(t('couldNotUpdateConversation'));
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem(CONVERSATION_LIST_WIDTH_KEY, String(conversationListWidth));
@@ -165,6 +177,9 @@ export default function Dashboard() {
             onFilterChange={setFilter}
             activeId={chatId ?? undefined}
             onOpen={openChat}
+            onConversationAction={(conversation, action) => { void handleConversationAction(conversation, action); }}
+            canMoveToSpam={folder !== 'spam' && folder !== 'trash'}
+            actionError={conversationActionError}
             search={search}
             compact={compact}
           />
@@ -314,6 +329,8 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
     getMessages(conversation.id).then((data) => {
       setMessages(data);
       setSubject('');
+      setReplyTarget(null);
+      setOpenedMessage(null);
       setLoading(false);
       onRead();
     });

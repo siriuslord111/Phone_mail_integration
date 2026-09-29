@@ -1,4 +1,4 @@
-import type { Conversation, Folder, MailFilter, Message, MessageAction, SendPayload } from '../types';
+import type { Conversation, ConversationAction, Folder, MailFilter, Message, MessageAction, SendPayload } from '../types';
 import { DEMO_MODE, api, demoDelay } from './axios';
 import { CONTACTS, ME, MOCK_CONVERSATIONS, MOCK_MESSAGES } from './mock.data';
 
@@ -114,6 +114,28 @@ export async function updateMessage(messageId: string, action: MessageAction): P
   }
   const { data } = await api.patch(`/messages/${messageId}`, { action });
   return data.message ?? data;
+}
+
+export async function updateConversationAction(conversationId: string, action: ConversationAction): Promise<void> {
+  if (DEMO_MODE) {
+    await demoDelay(180);
+    const conversation = demoConversations.find((item) => item.id === conversationId);
+    if (!conversation) throw new Error('Conversation not found.');
+    const conversationMessages = demoMessages[conversationId] ?? [];
+    if (action === 'delete') {
+      demoMessages[conversationId] = [];
+    } else if (action === 'spam') {
+      conversationMessages.forEach((message) => { message.mailbox = 'spam'; });
+    } else {
+      conversationMessages.forEach((message) => {
+        if (message.direction === 'in') message.read = action === 'markRead';
+      });
+      conversation.unreadCount = action === 'markRead' ? 0 : 1;
+    }
+    persistDemoMail();
+    return;
+  }
+  await api.patch(`/conversations/${encodeURIComponent(conversationId)}/actions`, { action });
 }
 
 /** GET /conversations/:id/messages */
