@@ -134,7 +134,11 @@ export function MailList({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {actionError && <p role="alert" className="mx-4 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 md:mx-5">{actionError}</p>}
+        {actionError && (
+          <p role="alert" className="mx-4 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 md:mx-5">
+            {actionError}
+          </p>
+        )}
         {loading ? (
           <MailListSkeleton />
         ) : conversations.length === 0 ? (
@@ -150,8 +154,8 @@ export function MailList({
                     event.preventDefault();
                     setContextMenu({
                       conversation: c,
-                      x: Math.min(event.clientX, window.innerWidth - 224),
-                      y: Math.min(event.clientY, window.innerHeight - 176),
+                      x: Math.min(event.clientX, window.innerWidth - 230),
+                      y: Math.min(event.clientY, window.innerHeight - 190),
                     });
                   }}
                   className={cn(

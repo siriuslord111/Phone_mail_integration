@@ -25,6 +25,7 @@ export async function deliverEmail(input: {
   body: string;
   replyToId?: string;
   quotedText?: string;
+  inReplyToHeader?: string;
   attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
 }) {
   const localRecipients: User[] = [];
@@ -44,12 +45,14 @@ export async function deliverEmail(input: {
 
   let externalDelivery: { delivered: boolean } | undefined;
   let senderAttachments: Array<{ id: string; filename: string; size: number; mimeType: string }> = [];
+  let senderMessage: { id: string; replyToId: string | null } | undefined;
   if (externalRecipients.length) {
     externalDelivery = await sendOutboundEmail({
       from: input.sender.email,
       to: externalRecipients,
       subject: input.subject,
       body: input.body,
+      inReplyTo: input.inReplyToHeader,
       attachments: input.attachments,
     });
   }
@@ -124,6 +127,7 @@ export async function deliverEmail(input: {
     });
     const senderCopy = savedCopies.find((copy) => copy.userId === input.sender.id);
     senderAttachments = senderCopy?.attachments ?? [];
+    if (senderCopy) senderMessage = { id: senderCopy.id, replyToId: senderCopy.replyToId };
   }
 
   await Promise.all(
@@ -142,5 +146,6 @@ export async function deliverEmail(input: {
     externalRecipients: externalRecipients.length,
     externalDelivery,
     attachments: senderAttachments,
+    senderMessage,
   };
 }

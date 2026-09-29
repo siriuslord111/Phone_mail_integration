@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 
-import { messages, normalizePhone } from '../store';
+import { addMessage, messages, normalizePhone } from '../store';
 import { requireAuth } from '../middlewares/auth';
 import { sendOutboundEmail } from '../services/email.service';
 import { normalizeRecipients } from '../services/email-recipient';
@@ -59,8 +59,9 @@ function groupMessageView(message: {
   createdAt: Date;
   isStarred: boolean;
   replyToId: string | null;
+  repliedAt?: Date | null;
   attachments: Array<{ id: string; filename: string; size: number }>;
-}, userPhone: string) {
+}, userPhone: string, replied = false) {
   return {
     id: groupMessageId(message.id),
     conversationId: groupConversationId(message.groupChatId),
@@ -74,6 +75,7 @@ function groupMessageView(message: {
     read: true,
     isStarred: message.isStarred,
     isReply: Boolean(message.replyToId),
+    replied: replied || Boolean(message.repliedAt),
     inReplyToId: message.replyToId ? groupMessageId(message.replyToId) : undefined,
     attachments: message.attachments.map((attachment) => ({
       id: attachment.id,
@@ -96,6 +98,8 @@ type ConversationEntry = {
   mailbox: 'inbox' | 'sent' | 'spam' | 'trash';
   isStarred: boolean;
   hasAttachments: boolean;
+  replied?: boolean;
+  inReplyToId?: string;
 };
 
 function conversationMessage(message: {
@@ -107,6 +111,8 @@ function conversationMessage(message: {
   mailbox: string;
   isRead: boolean;
   isStarred: boolean;
+  repliedAt: Date | null;
+  replyToId?: string | null;
 }) {
   return {
     id: `inbound-${message.id}`,
@@ -118,7 +124,9 @@ function conversationMessage(message: {
     read: message.isRead,
     mailbox: message.mailbox,
     isStarred: message.isStarred,
-    isReply: false,
+    replied: Boolean(message.repliedAt),
+    isReply: Boolean(message.replyToId),
+    inReplyToId: message.replyToId ?? undefined,
   };
 }
 
@@ -130,14 +138,15 @@ function storedMessage(message: {
   toAddress: string;
   subject: string;
   body: string;
-  replyToId?: string | null;
   quotedText?: string | null;
   direction: string;
   mailbox: string;
   createdAt: Date;
   isRead: boolean;
   isStarred: boolean;
-  attachments?: Array<{ id: string; filename: string; size: number; mimeType: string }>;
+  repliedAt: Date | null;
+  replyToId: string | null;
+  attachments?: Array<{ id: string; filename: string; size: number; mimeType?: string }>;
 }) {
   return {
     id: `local-${message.id}`,
@@ -151,6 +160,7 @@ function storedMessage(message: {
     isReply: Boolean(message.replyToId),
     inReplyToId: message.replyToId ?? undefined,
     quotedText: message.quotedText ?? undefined,
+    replied: Boolean(message.repliedAt),
     read: message.isRead,
     isStarred: message.isStarred,
     status: message.direction === 'out' ? 'sent' as const : undefined,
@@ -304,6 +314,8 @@ async function listConversations(req: Request, res: Response) {
       mailbox: message.mailbox ?? (message.from === userPhone ? 'sent' : 'inbox'),
       isStarred: message.isStarred ?? false,
       hasAttachments: Boolean(message.attachments?.length),
+      replied: message.replied,
+      inReplyToId: message.inReplyToId,
     });
     grouped.set(peer, list);
   }
@@ -326,6 +338,7 @@ async function listConversations(req: Request, res: Response) {
       mailbox: email.mailbox as ConversationEntry['mailbox'],
       isStarred: email.isStarred,
       hasAttachments: false,
+      replied: Boolean(email.repliedAt),
     });
     grouped.set(email.fromAddress, list);
   }
@@ -349,6 +362,8 @@ async function listConversations(req: Request, res: Response) {
       mailbox: email.mailbox as ConversationEntry['mailbox'],
       isStarred: email.isStarred,
       hasAttachments: email.attachments.length > 0,
+      replied: Boolean(email.repliedAt),
+      inReplyToId: email.replyToId ?? undefined,
     });
     grouped.set(email.peerAddress, list);
   }
@@ -533,9 +548,12 @@ async function listConversationMessages(req: Request, res: Response) {
     });
     const visibleMessages = groupMessages.filter((message) => !deletedMessageIds.has(message.id));
     const byId = new Map(visibleMessages.map((message) => [message.id, message]));
+    const repliedMessageIds = new Set(groupMessages.flatMap((message) =>
+      message.replyToId ? [message.replyToId] : [],
+    ));
     return res.json({
       messages: visibleMessages.map((message) => ({
-        ...groupMessageView(message, user.phoneNumber),
+        ...groupMessageView(message, user.phoneNumber, repliedMessageIds.has(message.id)),
         quotedText: message.replyToId ? byId.get(message.replyToId)?.body : undefined,
       })),
     });
@@ -568,17 +586,26 @@ async function listConversationMessages(req: Request, res: Response) {
   for (const message of result) {
     if (message.from !== userPhone) message.read = true;
   }
-  return res.json({
-    messages: [
-      ...result.map((message) => ({
+  const conversationMessages = [
+    ...result.map((message) => ({
         ...message,
         fromPhone: message.from,
         direction: message.from === userPhone ? 'out' as const : 'in' as const,
       })),
       ...inboundEmails.map((email) => ({ ...conversationMessage(email), read: true })),
       ...storedEmails.map((email) => ({ ...storedMessage(email), read: true })),
-    ].sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
-  });
+    ].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const repliedMessageIds = new Set(conversationMessages.flatMap((message) =>
+    message.inReplyToId ? [message.inReplyToId] : [],
+  ));
+  const messagesWithReplyState = conversationMessages.map((message) => ({
+    ...message,
+    replied: Boolean(message.replied || repliedMessageIds.has(message.id)),
+    quotedText: message.inReplyToId
+      ? conversationMessages.find((original) => original.id === message.inReplyToId)?.body
+      : undefined,
+  }));
+  return res.json({ messages: messagesWithReplyState });
 }
 
 router.post('/messages', (req, res, next) => {
@@ -611,7 +638,7 @@ router.post('/messages', (req, res, next) => {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid recipient.' });
     }
   }
-  const subject = String(req.body?.subject ?? '').trim();
+  let subject = String(req.body?.subject ?? '').trim();
   const body = typeof req.body?.body === 'string' ? req.body.body : '';
   const files = Array.isArray(req.files) ? req.files : [];
   if (subject.length > 200 || /[\r\n]/.test(subject)) {
@@ -625,6 +652,7 @@ router.post('/messages', (req, res, next) => {
     contentType: file.mimetype,
     content: file.buffer,
   }));
+  const replyTargetId = typeof req.body?.inReplyTo === 'string' ? req.body.inReplyTo : '';
   try {
     if (requestedGroupId && memoryStoreEnabled) {
       return res.status(503).json({ message: 'Group conversations require persistent storage.' });
@@ -637,13 +665,33 @@ router.post('/messages', (req, res, next) => {
       const replyToId = typeof req.body?.inReplyTo === 'string'
         ? req.body.inReplyTo.replace(/^group-message-/, '')
         : undefined;
-      if (replyToId && !await prisma.groupChatMessage.findFirst({
-        where: { id: replyToId, groupChatId: requestedGroupId },
-        select: { id: true },
-      })) {
-        return res.status(400).json({ message: 'The reply target is not in this group conversation.' });
+      let originalMessage: { id: string; senderId: string; subject: string; body: string; repliedAt: Date | null } | null = null;
+      if (replyToId) {
+        originalMessage = await prisma.groupChatMessage.findFirst({
+          where: { id: replyToId, groupChatId: requestedGroupId },
+          select: { id: true, senderId: true, subject: true, body: true, repliedAt: true },
+        });
+        if (!originalMessage || originalMessage.senderId === senderAccount.id) {
+          return res.status(400).json({ message: 'The reply target is not an incoming message in this group.' });
+        }
+        if (originalMessage.repliedAt || await prisma.groupChatMessage.findFirst({
+          where: { groupChatId: requestedGroupId, replyToId },
+          select: { id: true },
+        })) {
+          return res.status(409).json({ message: 'This message has already been replied to.' });
+        }
+        const reservation = await prisma.groupChatMessage.updateMany({
+          where: { id: replyToId, groupChatId: requestedGroupId, repliedAt: null },
+          data: { repliedAt: new Date() },
+        });
+        if (reservation.count !== 1) return res.status(409).json({ message: 'This message has already been replied to.' });
+        if (originalMessage.subject) {
+          subject = (/^re:/i.test(originalMessage.subject) ? originalMessage.subject : `Re: ${originalMessage.subject}`).slice(0, 200);
+        }
       }
-      const message = await prisma.groupChatMessage.create({
+      let message;
+      try {
+        message = await prisma.groupChatMessage.create({
         data: {
           groupChatId: requestedGroupId,
           senderId: senderAccount.id,
@@ -663,14 +711,27 @@ router.post('/messages', (req, res, next) => {
           sender: { select: { phoneNumber: true, name: true } },
           attachments: { select: { id: true, filename: true, size: true } },
         },
-      });
+        });
+      } catch (error) {
+        if (replyToId) {
+          await prisma.groupChatMessage.updateMany({
+            where: { id: replyToId, groupChatId: requestedGroupId },
+            data: { repliedAt: null },
+          });
+        }
+        throw error;
+      }
       await prisma.groupChat.update({
         where: { id: requestedGroupId },
         data: { updatedAt: new Date() },
       });
       const messageView = groupMessageView(message, sender);
       return res.status(201).json({
-        message: messageView,
+        message: {
+          ...messageView,
+          replied: false,
+          quotedText: originalMessage?.body,
+        },
         delivery: { delivered: true, localRecipients: 0, externalRecipients: 0 },
       });
     }
@@ -747,17 +808,116 @@ router.post('/messages', (req, res, next) => {
       });
     }
 
-    const delivery = await deliverEmail({
-      sender: senderAccount,
-      recipients,
-      subject,
-      body,
-      replyToId: typeof req.body?.inReplyTo === 'string' ? req.body.inReplyTo : undefined,
-      quotedText: typeof req.body?.quotedText === 'string' ? req.body.quotedText : undefined,
-      attachments,
-    });
+    let replyReservation:
+      | { kind: 'inbound' | 'stored'; id: string }
+      | { kind: 'memory'; message: (typeof messages)[number] }
+      | undefined;
+    let replyOriginal: { id: string; subject: string; body: string; providerMessageId?: string } | undefined;
+    if (replyTargetId) {
+      if (recipients.length !== 1) {
+        return res.status(400).json({ message: 'Replies must have exactly one recipient.' });
+      }
+      const peer = participantKey(recipients[0]);
+      if (replyTargetId.startsWith('inbound-') && !memoryStoreEnabled) {
+        const original = await prisma.inboundEmail.findFirst({
+          where: { id: replyTargetId.slice('inbound-'.length), userId: senderAccount.id, fromAddress: peer },
+          select: { id: true, subject: true, body: true, providerMessageId: true, repliedAt: true },
+        });
+        if (!original) return res.status(400).json({ message: 'The reply target is not in this conversation.' });
+        if (original.repliedAt) return res.status(409).json({ message: 'This message has already been replied to.' });
+        const reservation = await prisma.inboundEmail.updateMany({
+          where: { id: original.id, userId: senderAccount.id, repliedAt: null },
+          data: { repliedAt: new Date() },
+        });
+        if (reservation.count !== 1) return res.status(409).json({ message: 'This message has already been replied to.' });
+        replyReservation = { kind: 'inbound', id: original.id };
+        replyOriginal = { ...original, id: replyTargetId };
+      } else if (replyTargetId.startsWith('local-') && !memoryStoreEnabled) {
+        const original = await prisma.mailMessage.findFirst({
+          where: {
+            id: replyTargetId.slice('local-'.length),
+            userId: senderAccount.id,
+            peerAddress: peer,
+            direction: 'in',
+          },
+          select: { id: true, subject: true, body: true, repliedAt: true },
+        });
+        if (!original) return res.status(400).json({ message: 'The reply target is not an incoming message in this conversation.' });
+        if (original.repliedAt) return res.status(409).json({ message: 'This message has already been replied to.' });
+        const reservation = await prisma.mailMessage.updateMany({
+          where: { id: original.id, userId: senderAccount.id, repliedAt: null },
+          data: { repliedAt: new Date() },
+        });
+        if (reservation.count !== 1) return res.status(409).json({ message: 'This message has already been replied to.' });
+        replyReservation = { kind: 'stored', id: original.id };
+        replyOriginal = { ...original, id: replyTargetId };
+      } else {
+        const original = messages.find((message) =>
+          message.id === replyTargetId &&
+          message.from !== sender &&
+          peerForMessage(message, sender) === peer,
+        );
+        if (!original) return res.status(400).json({ message: 'The reply target is not an incoming message in this conversation.' });
+        if (original.replied) return res.status(409).json({ message: 'This message has already been replied to.' });
+        original.replied = true;
+        replyReservation = { kind: 'memory', message: original };
+        replyOriginal = { id: original.id, subject: original.subject, body: original.body };
+      }
+      if (replyOriginal.subject) {
+        subject = (/^re:/i.test(replyOriginal.subject) ? replyOriginal.subject : `Re: ${replyOriginal.subject}`).slice(0, 200);
+      }
+    }
+    let delivery;
+    try {
+      delivery = await deliverEmail({
+        sender: senderAccount,
+        recipients,
+        subject,
+        body,
+        replyToId: replyTargetId || undefined,
+        quotedText: replyOriginal?.body ?? (typeof req.body?.quotedText === 'string' ? req.body.quotedText : undefined),
+        inReplyToHeader: replyOriginal?.providerMessageId,
+        attachments,
+      });
+    } catch (error) {
+      if (replyReservation?.kind === 'inbound') {
+        await prisma.inboundEmail.updateMany({
+          where: { id: replyReservation.id, userId: senderAccount.id },
+          data: { repliedAt: null },
+        });
+      } else if (replyReservation?.kind === 'stored') {
+        await prisma.mailMessage.updateMany({
+          where: { id: replyReservation.id, userId: senderAccount.id },
+          data: { repliedAt: null },
+        });
+      } else if (replyReservation?.kind === 'memory') {
+        replyReservation.message.replied = false;
+      }
+      throw error;
+    }
+    if (delivery.externalRecipients > 0) {
+      const externalRecipients = recipients.filter((recipient) => !recipient.endsWith('@phonemail.com'));
+      addMessage({
+        from: sender,
+        to: externalRecipients,
+        subject,
+        body,
+        isReply: Boolean(replyTargetId),
+        inReplyToId: replyTargetId || undefined,
+        replyToId: replyTargetId || undefined,
+        quotedText: replyOriginal?.body,
+        replied: false,
+        attachments: files.map((file, index) => ({
+          id: `external-${Date.now()}-${index}`,
+          name: file.originalname,
+          size: file.size,
+        })),
+      });
+    }
     const message = {
-      id: `delivery-${Date.now()}`,
+      id: replyTargetId && delivery.senderMessage
+        ? `local-${delivery.senderMessage.id}`
+        : `delivery-${Date.now()}`,
       from: sender,
       fromPhone: sender,
       to: recipients,
@@ -770,9 +930,10 @@ router.post('/messages', (req, res, next) => {
       conversationId: recipients.length === 1 && recipients[0].endsWith('@phonemail.com')
         ? `conversation-${participantKey(recipients[0])}`
         : undefined,
-      isReply: Boolean(req.body?.inReplyTo),
-      inReplyToId: typeof req.body?.inReplyTo === 'string' ? req.body.inReplyTo : undefined,
-      quotedText: typeof req.body?.quotedText === 'string' ? req.body.quotedText : undefined,
+      isReply: Boolean(replyTargetId),
+      inReplyToId: replyTargetId || undefined,
+      quotedText: replyOriginal?.body,
+      replied: false,
       attachments: files.length > 0
         ? (delivery.attachments.length > 0
           ? delivery.attachments.map((attachment) => ({

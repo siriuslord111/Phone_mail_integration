@@ -25,7 +25,7 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const isOut = message.direction === 'out';
-  const canSwipe = Boolean(onSwipeReply) && !message.replied;
+  const canSwipe = Boolean(onSwipeReply) && message.direction === 'in' && !message.replied;
   const isLong = message.body.length > LONG_MESSAGE_CHARS;
   const canOpenFull = Boolean(onOpenFull) && (isLong || Boolean(message.mailbox));
 
@@ -83,12 +83,20 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
       <div
         role={canOpenFull ? 'button' : undefined}
         tabIndex={canOpenFull ? 0 : undefined}
-        onClick={() => canOpenFull && onOpenFull?.(message)}
+        aria-label={canOpenFull ? `${t('openFullEmail')}: ${message.subject || t('emailSubjectFallback')}` : undefined}
+        onClick={(event) => {
+          if (!canOpenFull) return;
+          if (event.target instanceof Element && event.target.closest('button, a, input, [role="menu"], [role="menuitem"]')) return;
+          onOpenFull?.(message);
+        }}
         onKeyDown={(event) => {
-          if (canOpenFull && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault();
-            onOpenFull?.(message);
-          }
+          if (
+            !canOpenFull ||
+            event.target !== event.currentTarget ||
+            (event.key !== 'Enter' && event.key !== ' ')
+          ) return;
+          event.preventDefault();
+          onOpenFull?.(message);
         }}
         style={{ transform: dragX ? `translateX(${dragX}px)` : undefined }}
         className={cn(
@@ -96,7 +104,7 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
           isOut
             ? 'rounded-tr-md bg-gradient-to-br from-[#2a72ff] to-[#1a5ff0] text-white'
             : 'rounded-tl-md bg-white text-slate-800 ring-1 ring-slate-100',
-          canOpenFull && 'cursor-pointer',
+          canOpenFull && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a66ff] focus-visible:ring-offset-2',
         )}
       >
         {message.isGroup && !isOut && message.senderName && (

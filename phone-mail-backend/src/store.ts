@@ -29,6 +29,9 @@ export type Message = {
   isStarred?: boolean;
   replyToId?: string;
   quotedText?: string;
+  replied?: boolean;
+  inReplyToId?: string;
+  isReply?: boolean;
   attachments?: Array<{ id: string; name: string; size: number }>;
 };
 

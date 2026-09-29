@@ -332,6 +332,8 @@ function ChatPanel({ conversation, folder, onBack, onFavouriteToggle, onComposeT
     getMessages(conversation.id).then((data) => {
       setMessages(data);
       setSubject('');
+      setReplyTarget(null);
+      setOpenedMessage(null);
       setLoading(false);
       onRead();
     });

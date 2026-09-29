@@ -19,6 +19,7 @@ export type OutboundEmail = {
   to: string[];
   subject: string;
   body: string;
+  inReplyTo?: string;
   attachments?: Array<{ filename: string; content: Buffer }>;
 };
 
@@ -32,6 +33,8 @@ export async function sendOutboundEmail(email: OutboundEmail) {
     to: email.to.join(', '),
     subject: email.subject,
     text: email.body,
+    inReplyTo: email.inReplyTo,
+    references: email.inReplyTo,
     attachments: email.attachments?.map(({ filename, content }) => ({ filename, content })),
   });
 

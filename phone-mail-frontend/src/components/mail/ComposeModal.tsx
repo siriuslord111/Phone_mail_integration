@@ -4,7 +4,7 @@ import { Button } from '../common/Buttons';
 import { deleteDraft, getDraftAttachment, listDrafts, saveDraft, sendMessage } from '../../api/email.api';
 import type { MailDraft } from '../../api/email.api';
 import type { Message } from '../../types';
-import { digitsOnly, normalizePhone } from '../../utils/formatters';
+import { digitsOnly, formatBytes, normalizePhone } from '../../utils/formatters';
 import { getErrorMessage } from '../../api/axios';
 import { useLanguage } from '../../context/LanguageProvider';
 
@@ -31,8 +31,9 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
   const [toInput, setToInput] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
-  const [attachments, setAttachments] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [showSendWarning, setShowSendWarning] = useState(false);
   const [error, setError] = useState('');
   const [activeDraftId, setActiveDraftId] = useState(draftId);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -52,7 +53,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
       const restoredFiles = await Promise.all((draft.attachments ?? []).map((attachment) =>
         getDraftAttachment(draft.id, attachment.id, attachment.name, attachment.mimeType),
       ));
-      if (!cancelled) setAttachments(restoredFiles);
+      if (!cancelled) setFiles(restoredFiles);
     }).catch((loadError) => {
       if (!cancelled) setError(getErrorMessage(loadError, t('couldNotLoadDraft')));
     });
@@ -60,7 +61,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
   }, [draftId, t]);
 
   const persistDraft = async (): Promise<MailDraft | undefined> => {
-    if (to.length === 0 && !subject.trim() && !body.trim() && attachments.length === 0) return undefined;
+    if (to.length === 0 && !subject.trim() && !body.trim() && files.length === 0) return undefined;
     setSavingDraft(true);
     setError('');
     try {
@@ -69,7 +70,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
         recipients: to,
         subject,
         body,
-        files: attachments,
+        files,
       });
       setActiveDraftId(draft.id);
       return draft;
@@ -82,12 +83,12 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
   };
 
   const closeAndSave = async () => {
-    if (await persistDraft() || (to.length === 0 && !subject.trim() && !body.trim() && attachments.length === 0)) onClose();
+    if (await persistDraft() || (to.length === 0 && !subject.trim() && !body.trim() && files.length === 0)) onClose();
   };
   closeAndSaveRef.current = closeAndSave;
 
   const discardDraft = async () => {
-    const hasContent = Boolean(activeDraftId || to.length || subject.trim() || body.trim() || attachments.length);
+    const hasContent = Boolean(activeDraftId || to.length || subject.trim() || body.trim() || files.length);
     if (hasContent && !window.confirm(t('discardDraftConfirm'))) return;
     if (activeDraftId) {
       try {
@@ -105,11 +106,15 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
       if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (showSendWarning) {
+        setShowSendWarning(false);
+        return;
+      }
       void closeAndSaveRef.current();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, []);
+  }, [showSendWarning]);
 
   const inputDigits = digitsOnly(toInput);
   const canAddPhone = inputDigits.length === 10 && /^\+?[\d\s()-]+$/.test(toInput);
@@ -129,14 +134,24 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
     setError('');
   };
 
-  const handleSend = async () => {
-    if (to.length === 0) {
-      setError(t('addRecipient'));
+  const handleFilesSelected = (selectedFiles: FileList | null) => {
+    if (!selectedFiles?.length) return;
+    const addedFiles = Array.from(selectedFiles);
+    const oversized = addedFiles.find((file) => file.size > 10 * 1024 * 1024);
+    if (oversized) {
+      setError(`${oversized.name} ${t('attachmentSizeLimit')}`);
       return;
     }
-    if ((!subject.trim() || !body.trim()) && !window.confirm(t('sendWithMissingFieldsConfirm'))) {
+    if (files.length + addedFiles.length > 5) {
+      setError(t('attachmentLimit'));
       return;
     }
+    setFiles((previous) => [...previous, ...addedFiles]);
+    setError('');
+  };
+
+  const sendNow = async () => {
+    setShowSendWarning(false);
     setSending(true);
     setError('');
     try {
@@ -144,7 +159,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
         to,
         subject: subject.trim() || undefined,
         body: body.trim(),
-        attachments: attachments.length ? attachments : undefined,
+        attachments: files.length ? files : undefined,
       });
       if (activeDraftId) await deleteDraft(activeDraftId);
       onSent(message);
@@ -153,6 +168,18 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
     } finally {
       setSending(false);
     }
+  };
+
+  const handleSend = () => {
+    if (to.length === 0) {
+      setError(t('addRecipient'));
+      return;
+    }
+    if (!subject.trim() || !body.trim()) {
+      setShowSendWarning(true);
+      return;
+    }
+    void sendNow();
   };
 
   return (
@@ -230,65 +257,59 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
             className="w-full resize-none px-4 py-3 text-[15px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400"
           />
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              const selected = Array.from(event.currentTarget.files ?? []);
-              const oversized = selected.find((file) => file.size > 10 * 1024 * 1024);
-              if (oversized) {
-                setError(`${oversized.name} ${t('attachmentSizeLimit')}`);
-              } else if (attachments.length + selected.length > 5) {
-                setError(t('attachmentLimit'));
-              } else {
-                setAttachments((previous) => [...previous, ...selected]);
-                setError('');
-              }
-              event.currentTarget.value = '';
-            }}
-          />
-
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-4 pb-3">
-              {attachments.map((file, index) => (
-                <span key={`${file.name}-${index}`} className="flex max-w-full items-center gap-1.5 rounded-full bg-slate-100 py-1 pl-2.5 pr-1.5 text-xs text-slate-600">
-                  <Paperclip className="size-3 shrink-0" />
-                  <span className="max-w-[12rem] truncate">{file.name}</span>
+          {files.length > 0 && (
+            <ul aria-label={t('attachments')} className="space-y-1.5 px-4 pb-3">
+              {files.map((file, index) => (
+                <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <Paperclip className="size-4 shrink-0 text-slate-400" />
+                  <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{formatBytes(file.size)}</span>
                   <button
                     type="button"
-                    onClick={() => setAttachments((previous) => previous.filter((_, itemIndex) => itemIndex !== index))}
-                    aria-label={`${t('removeRecipient')} ${file.name}`}
-                    className="grid size-5 shrink-0 place-items-center rounded-full hover:bg-slate-200"
+                    onClick={() => setFiles((previous) => previous.filter((_, fileIndex) => fileIndex !== index))}
+                    aria-label={`${t('removeAttachment')} ${file.name}`}
+                    className="grid size-7 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700"
                   >
-                    <X className="size-3" />
+                    <X className="size-4" />
                   </button>
-                </span>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
 
           {error && <p role="alert" className="px-4 pb-2 text-sm text-rose-600">{error}</p>}
         </div>
 
         <footer className="flex shrink-0 items-center justify-between border-t border-slate-100 px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
-          <button
-            onClick={() => { void discardDraft(); }}
-            aria-label={t('discard')}
-            className="grid size-10 place-items-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
-          >
-            <Trash2 className="size-5" />
-          </button>
-          <div className="flex items-center gap-2">
-            <Button
-              disabled={savingDraft || sending}
+          <div className="flex items-center gap-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                handleFilesSelected(event.target.files);
+                event.currentTarget.value = '';
+              }}
+            />
+            <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
-              variant="secondary"
               aria-label={t('attachFile')}
+              disabled={sending}
+              className="grid size-10 place-items-center rounded-full text-slate-500 transition hover:bg-blue-50 hover:text-[#1a66ff] disabled:opacity-50"
             >
-              <Paperclip className="size-4" />
-            </Button>
+              <Paperclip className="size-5" />
+            </button>
+            <button
+              onClick={() => { void discardDraft(); }}
+              aria-label={t('discard')}
+              className="grid size-10 place-items-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+            >
+              <Trash2 className="size-5" />
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
             <Button
               disabled={savingDraft || sending}
               onClick={() => { void persistDraft(); }}
@@ -300,6 +321,32 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
           </div>
         </footer>
       </div>
+      {showSendWarning && (
+        <div className="absolute inset-0 z-50 grid place-items-center bg-slate-900/30 p-5">
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="incomplete-email-title"
+            aria-describedby="incomplete-email-warning"
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+          >
+            <h3 id="incomplete-email-title" className="text-base font-semibold text-slate-900">
+              {t('incompleteEmailWarningTitle')}
+            </h3>
+            <p id="incomplete-email-warning" className="mt-2 text-sm text-slate-600">
+              {t('incompleteEmailWarning')}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setShowSendWarning(false)}>
+                {t('cancel')}
+              </Button>
+              <Button size="sm" loading={sending} onClick={() => { void sendNow(); }}>
+                {t('sendAnyway')}
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

@@ -79,6 +79,7 @@ model InboundEmail {
   mailbox           String   @default("inbox")
   isRead            Boolean  @default(false)
   isStarred         Boolean  @default(false)
+  repliedAt         DateTime?
 
   @@unique([providerMessageId, userId])
   @@index([userId, receivedAt])
@@ -98,6 +99,7 @@ model MailMessage {
   mailbox     String           @default("inbox")
   isRead      Boolean          @default(false)
   isStarred   Boolean          @default(false)
+  repliedAt   DateTime?
   replyToId   String?
   quotedText  String?
   createdAt   DateTime         @default(now())
@@ -179,6 +181,7 @@ model GroupChatMessage {
   subject     String                     @default("")
   body        String
   replyToId   String?
+  repliedAt   DateTime?
   isStarred   Boolean                    @default(false)
   createdAt   DateTime                   @default(now())
   attachments GroupChatAttachment[]

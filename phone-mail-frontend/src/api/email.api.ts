@@ -39,8 +39,8 @@ export interface MailDraft {
   updatedAt: string;
   attachments?: Array<{ id: string; name: string; mimeType: string; size: number }>;
 }
-let demoDrafts: MailDraft[] = [];
-const demoDraftAttachments = new Map<string, File[]>();
+const DEMO_DRAFTS_KEY = 'phonemail_demo_drafts';
+let demoDrafts: MailDraft[] = JSON.parse(localStorage.getItem(DEMO_DRAFTS_KEY) ?? '[]') as MailDraft[];
 
 export interface SharedContentItem {
   id: string;
@@ -55,6 +55,69 @@ export interface SharedContentItem {
 
 function demoContactKey(phone: string) {
   return phone.replace(/\D/g, '');
+}
+
+interface StoredDemoDraftAttachment {
+  draftId: string;
+  attachmentId: string;
+  file: File;
+}
+
+function openDemoDraftDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('phonemail-demo-drafts', 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('attachments', { keyPath: ['draftId', 'attachmentId'] });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('Could not open draft attachment storage.'));
+  });
+}
+
+async function saveDemoDraftAttachments(draftId: string, files: File[]) {
+  const database = await openDemoDraftDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction('attachments', 'readwrite');
+      const store = transaction.objectStore('attachments');
+      const request = store.getAllKeys();
+      request.onsuccess = () => {
+        for (const key of request.result) {
+          if (Array.isArray(key) && key[0] === draftId) store.delete(key);
+        }
+        files.forEach((file, index) => {
+          store.put({ draftId, attachmentId: `${draftId}-${index}`, file } satisfies StoredDemoDraftAttachment);
+        });
+      };
+      request.onerror = () => reject(request.error ?? new Error('Could not update draft attachments.'));
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error ?? new Error('Could not update draft attachments.'));
+      transaction.onabort = () => reject(transaction.error ?? new Error('Draft attachment update was cancelled.'));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+async function getDemoDraftAttachment(draftId: string, attachmentId: string): Promise<File> {
+  const database = await openDemoDraftDatabase();
+  try {
+    return await new Promise<File>((resolve, reject) => {
+      const request = database.transaction('attachments').objectStore('attachments')
+        .get([draftId, attachmentId]);
+      request.onsuccess = () => {
+        const record = request.result as StoredDemoDraftAttachment | undefined;
+        if (!record) {
+          reject(new Error('Draft attachment was not found in local storage.'));
+          return;
+        }
+        resolve(record.file);
+      };
+      request.onerror = () => reject(request.error ?? new Error('Could not load draft attachment.'));
+    });
+  } finally {
+    database.close();
+  }
 }
 
 function persistDemoMail() {
@@ -129,7 +192,7 @@ export async function saveDraft(draft: Partial<MailDraft> & Pick<MailDraft, 'rec
   if (DEMO_MODE) {
     const id = draft.id ?? `draft-${Date.now()}`;
     const files = draft.files ?? [];
-    demoDraftAttachments.set(id, files);
+    await saveDemoDraftAttachments(id, files);
     const saved: MailDraft = {
       id,
       recipients: draft.recipients,
@@ -144,6 +207,7 @@ export async function saveDraft(draft: Partial<MailDraft> & Pick<MailDraft, 'rec
       })),
     };
     demoDrafts = [saved, ...demoDrafts.filter((item) => item.id !== saved.id)];
+    localStorage.setItem(DEMO_DRAFTS_KEY, JSON.stringify(demoDrafts));
     return saved;
   }
   const form = new FormData();
@@ -157,12 +221,7 @@ export async function saveDraft(draft: Partial<MailDraft> & Pick<MailDraft, 'rec
 }
 
 export async function getDraftAttachment(draftId: string, attachmentId: string, filename: string, mimeType: string): Promise<File> {
-  if (DEMO_MODE) {
-    const index = Number(attachmentId.slice(draftId.length + 1));
-    const file = demoDraftAttachments.get(draftId)?.[index];
-    if (!file) throw new Error('Draft attachment was not found.');
-    return file;
-  }
+  if (DEMO_MODE) return getDemoDraftAttachment(draftId, attachmentId);
   const { data } = await api.get(`/drafts/${encodeURIComponent(draftId)}/attachments/${encodeURIComponent(attachmentId)}`, {
     responseType: 'blob',
   });
@@ -171,8 +230,27 @@ export async function getDraftAttachment(draftId: string, attachmentId: string, 
 
 export async function deleteDraft(id: string): Promise<void> {
   if (DEMO_MODE) {
+    const database = await openDemoDraftDatabase();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction('attachments', 'readwrite');
+        const store = transaction.objectStore('attachments');
+        const request = store.getAllKeys();
+        request.onsuccess = () => {
+          for (const key of request.result) {
+            if (Array.isArray(key) && key[0] === id) store.delete(key);
+          }
+        };
+        request.onerror = () => reject(request.error ?? new Error('Could not delete draft attachments.'));
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ?? new Error('Could not delete draft attachments.'));
+        transaction.onabort = () => reject(transaction.error ?? new Error('Draft attachment deletion was cancelled.'));
+      });
+    } finally {
+      database.close();
+    }
     demoDrafts = demoDrafts.filter((draft) => draft.id !== id);
-    demoDraftAttachments.delete(id);
+    localStorage.setItem(DEMO_DRAFTS_KEY, JSON.stringify(demoDrafts));
     return;
   }
   await api.delete(`/drafts/${id}`);
@@ -213,6 +291,7 @@ export async function updateConversationAction(conversationId: string, action: C
       conversationMessages.forEach((message) => {
         if (message.direction === 'in') message.read = action === 'markRead';
       });
+      conversation.unreadCount = action === 'markRead' ? 0 : 1;
     }
     persistDemoMail();
     return;
