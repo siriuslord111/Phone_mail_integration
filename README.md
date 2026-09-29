@@ -28,6 +28,13 @@ Choose a language at startup or change it later in Settings → Language; the
 choice is saved in the browser. User-written messages and profile details are
 not automatically translated.
 
+The Terms of Service dialog is available in all six supported languages from
+the permissions screen. It is a draft for this prototype: the legal service
+operator and postal address could not be verified from public project
+information. Verify and add the operator's legal identity and compliant
+private grievance contact, and obtain legal review, before public production
+use.
+
 The 2Factor integration expects a valid account API key and an approved OTP SMS
 template; delivery cannot be tested until those credentials are supplied.
 Web and call-based account registration both create accounts only after an OTP

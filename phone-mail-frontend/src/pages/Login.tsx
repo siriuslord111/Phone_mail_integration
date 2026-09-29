@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Check, ChevronRight, Globe, ShieldCheck } from 'lucide-react';
 import { Button } from '../components/common/Buttons';
 import { Checkbox, PhoneField } from '../components/common/Inputs';
+import { TermsDialog } from '../components/common/TermsDialog';
 import { useAuth } from '../hooks/useAuth';
 import { getErrorMessage } from '../api/axios';
 import { useLanguage } from '../context/LanguageProvider';
@@ -19,6 +20,7 @@ export default function Login() {
   const { language, setLanguage, t } = useLanguage();
   const [step, setStep] = useState<Step>('language');
   const [agreed, setAgreed] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
   const [phone, setPhone] = useState('');
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [error, setError] = useState('');
@@ -175,7 +177,13 @@ export default function Login() {
         <div className="mt-5 space-y-4">
           <Checkbox checked={agreed} onChange={setAgreed}>
             {t('agreeTo')}{' '}
-            <a href="#" className="font-medium text-[#1a66ff] underline underline-offset-2">{t('termsOfService')}</a>{' '}
+            <button
+              type="button"
+              onClick={() => setTermsOpen(true)}
+              className="font-medium text-[#1a66ff] underline underline-offset-2"
+            >
+              {t('termsOfService')}
+            </button>{' '}
             {t('andPrivacyPolicy')}
           </Checkbox>
           <Button
@@ -192,6 +200,7 @@ export default function Login() {
             <ChevronRight className="size-4" />
           </Button>
         </div>
+        {termsOpen && <TermsDialog onClose={() => setTermsOpen(false)} />}
       </div>
     );
   }

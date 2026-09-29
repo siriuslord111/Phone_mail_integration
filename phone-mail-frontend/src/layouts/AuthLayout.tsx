@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom';
-import { Lock, Smartphone } from 'lucide-react';
+import { Smartphone } from 'lucide-react';
 import { useLanguage } from '../context/LanguageProvider';
 
 /**
@@ -38,9 +38,8 @@ export default function AuthLayout() {
             <Outlet />
           </div>
 
-          <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-slate-400">
-            <Lock className="size-3.5" />
-            {t('encrypted')}
+          <p className="mt-6 text-center text-xs text-slate-400">
+            {t('accountAccess')}
           </p>
         </div>
       </div>
