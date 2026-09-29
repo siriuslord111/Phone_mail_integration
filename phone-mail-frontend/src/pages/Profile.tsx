@@ -1,4 +1,4 @@
-import { Camera, FileText, Image, Link2, PlaySquare, X } from 'lucide-react';
+import { Camera, X } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../context/LanguageProvider';
@@ -91,17 +91,6 @@ export default function Profile() {
         {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(''); setSaved(false); }} className="inline-flex items-center gap-1 text-sm text-slate-500"><X className="size-4" /> {t('removeProfilePhoto')}</button>}
         <button onClick={save} disabled={saving} className="rounded-xl bg-[#1a66ff] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? t('saving') : saved ? t('saved') : t('saveProfile')}</button>
       </div>
-      <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <h2 className="mb-3 font-semibold text-slate-800">{t('sharedContent')}</h2>
-        <div className="grid grid-cols-4 gap-2 text-center text-xs text-slate-500">
-          <Shared icon={Image} label={t('photos')} /><Shared icon={FileText} label={t('files')} /><Shared icon={Link2} label={t('links')} /><Shared icon={PlaySquare} label={t('media')} />
-        </div>
-        <p className="mt-4 text-sm text-slate-400">{t('sharedContentHint')}</p>
-      </div>
     </div>
   );
-}
-
-function Shared({ icon: Icon, label }: { icon: typeof Image; label: string }) {
-  return <div className="rounded-xl bg-slate-50 p-3"><Icon className="mx-auto mb-1 size-5 text-[#1a66ff]" />{label}</div>;
 }
