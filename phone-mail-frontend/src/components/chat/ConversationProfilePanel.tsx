@@ -58,13 +58,16 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   }, [messages]);
 
   useEffect(() => {
-    if (!photoOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPhotoOpen(false);
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (photoOpen) setPhotoOpen(false);
+      else onClose();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [photoOpen]);
+  }, [onClose, photoOpen]);
 
   const save = async () => {
     setSaving(true);
@@ -98,7 +101,7 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   };
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col overflow-y-auto bg-slate-50">
+    <div role="dialog" aria-modal="true" className="absolute inset-0 z-30 flex flex-col overflow-y-auto bg-slate-50">
       <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-100 bg-white px-4 py-3">
         <button onClick={onClose} aria-label={t('back')} className="grid size-9 place-items-center rounded-full hover:bg-slate-100"><ArrowLeft className="size-5" /></button>
         <h2 className="font-semibold text-slate-800">{conversation.isGroup ? t('groupInfo') : t('contactInfo')}</h2>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import { Button } from '../common/Buttons';
 import { deleteDraft, listDrafts, saveDraft, sendMessage } from '../../api/email.api';
@@ -34,6 +34,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
   const [error, setError] = useState('');
   const [activeDraftId, setActiveDraftId] = useState(draftId);
   const [savingDraft, setSavingDraft] = useState(false);
+  const closeAndSaveRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     if (!draftId) return;
@@ -75,6 +76,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
   const closeAndSave = async () => {
     if (await persistDraft() || (to.length === 0 && !subject.trim() && !body.trim())) onClose();
   };
+  closeAndSaveRef.current = closeAndSave;
 
   const discardDraft = async () => {
     if (activeDraftId) {
@@ -87,6 +89,17 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
     }
     onClose();
   };
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void closeAndSaveRef.current();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, []);
 
   const inputDigits = digitsOnly(toInput);
   const canAddPhone = inputDigits.length === 10 && /^\+?[\d\s()-]+$/.test(toInput);
@@ -129,8 +142,8 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-white md:items-center md:justify-center md:bg-slate-900/40 md:backdrop-blur-sm">
-      <div className="anim-sheet flex h-full w-full flex-col md:h-auto md:max-h-[85vh] md:max-w-lg md:rounded-3xl md:shadow-2xl">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-40 flex flex-col bg-white md:items-center md:justify-center md:bg-slate-900/40 md:backdrop-blur-sm">
+      <div className="anim-sheet flex h-full w-full flex-col md:h-[min(82vh,800px)] md:max-h-[90vh] md:max-w-4xl md:rounded-3xl md:shadow-2xl">
         <header className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 pt-[max(env(safe-area-inset-top),0.75rem)] md:pt-3">
           <h2 className="text-[15px] font-semibold text-slate-900">{t('newEmail')}</h2>
           <button

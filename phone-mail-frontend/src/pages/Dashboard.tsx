@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Info, Star } from 'lucide-react';
 import { MailList } from '../components/mail/MailList';
@@ -38,6 +38,23 @@ const FOLDER_LABELS: Record<Folder, TranslationKey> = {
   spam: 'spam',
   trash: 'trash',
 };
+const CONVERSATION_LIST_WIDTH_KEY = 'phonemail_setting_conversation_list_width';
+const MIN_CONVERSATION_LIST_WIDTH = 260;
+const MAX_CONVERSATION_LIST_WIDTH = 560;
+const MIN_READING_PANE_WIDTH = 320;
+
+function clampConversationListWidth(width: number, availableWidth: number) {
+  const maxWidth = Math.max(
+    MIN_CONVERSATION_LIST_WIDTH,
+    Math.min(MAX_CONVERSATION_LIST_WIDTH, availableWidth - MIN_READING_PANE_WIDTH),
+  );
+  return Math.min(maxWidth, Math.max(MIN_CONVERSATION_LIST_WIDTH, width));
+}
+
+function readConversationListWidth() {
+  const stored = Number(localStorage.getItem(CONVERSATION_LIST_WIDTH_KEY));
+  return Number.isFinite(stored) && stored > 0 ? stored : 352;
+}
 
 export default function Dashboard() {
   const { t } = useLanguage();
@@ -52,6 +69,9 @@ export default function Dashboard() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [drafts, setDrafts] = useState<MailDraft[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  const [conversationListWidth, setConversationListWidth] = useState(readConversationListWidth);
+  const splitPaneRef = useRef<HTMLDivElement>(null);
+  const resizingRef = useRef(false);
   const compact = localStorage.getItem('phonemail_setting_compact_conversations') === 'true';
 
   const folder = FOLDER_BY_PATH[pathname] ?? 'inbox';
@@ -89,11 +109,42 @@ export default function Dashboard() {
     [filter, folder, search],
   );
 
+  useEffect(() => {
+    localStorage.setItem(CONVERSATION_LIST_WIDTH_KEY, String(conversationListWidth));
+  }, [conversationListWidth]);
+
+  useEffect(() => {
+    const container = splitPaneRef.current;
+    if (!container) return;
+    const resizeObserver = new ResizeObserver(() => {
+      if (!window.matchMedia('(min-width: 768px)').matches) return;
+      setConversationListWidth((width) => clampConversationListWidth(width, container.clientWidth));
+    });
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  const resizeConversationList = (clientX: number) => {
+    const container = splitPaneRef.current;
+    if (!container) return;
+    setConversationListWidth(
+      clampConversationListWidth(clientX - container.getBoundingClientRect().left, container.clientWidth),
+    );
+  };
+
+  const splitPaneStyle = {
+    '--conversation-list-width': `${conversationListWidth}px`,
+  } as CSSProperties;
+
   return (
-    <div className="flex h-full min-h-0">
+    <div
+      ref={splitPaneRef}
+      style={splitPaneStyle}
+      className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[var(--conversation-list-width)_6px_minmax(0,1fr)]"
+    >
       {/* ── Conversation list ──────────────────────────────────────── */}
       <div
-        className={`flex min-h-0 w-full flex-col md:w-[22rem] md:shrink-0 md:border-r md:border-slate-100 ${
+        className={`flex min-h-0 w-full flex-col md:w-[var(--conversation-list-width)] ${
           chatId ? 'hidden md:flex' : 'flex'
         }`}
       >
@@ -118,6 +169,48 @@ export default function Dashboard() {
             compact={compact}
           />
         )}
+      </div>
+
+      <div
+        role="separator"
+        aria-label={t('resizeConversationList')}
+        aria-orientation="vertical"
+        aria-valuemin={MIN_CONVERSATION_LIST_WIDTH}
+        aria-valuemax={Math.min(MAX_CONVERSATION_LIST_WIDTH, Math.max(MIN_CONVERSATION_LIST_WIDTH, (splitPaneRef.current?.clientWidth ?? 0) - MIN_READING_PANE_WIDTH))}
+        aria-valuenow={Math.round(conversationListWidth)}
+        tabIndex={0}
+        className="group hidden cursor-col-resize touch-none items-center justify-center bg-slate-100 outline-none hover:bg-blue-100 focus-visible:bg-blue-100 md:flex"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          resizingRef.current = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+        }}
+        onPointerMove={(event) => {
+          if (resizingRef.current) resizeConversationList(event.clientX);
+        }}
+        onPointerUp={() => {
+          resizingRef.current = false;
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }}
+        onPointerCancel={() => {
+          resizingRef.current = false;
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault();
+            const delta = event.key === 'ArrowLeft' ? -24 : 24;
+            setConversationListWidth((width) =>
+              clampConversationListWidth(width + delta, splitPaneRef.current?.clientWidth ?? window.innerWidth),
+            );
+          }
+        }}
+      >
+        <span className="h-10 w-0.5 rounded-full bg-slate-300 transition-colors group-hover:bg-blue-400 group-focus-visible:bg-blue-500" />
       </div>
 
       {/* ── Chat / reading pane ────────────────────────────────────── */}
@@ -229,6 +322,17 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages, loading]);
+
+  useEffect(() => {
+    const goBackOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || document.querySelector('[role="dialog"]')) return;
+      event.preventDefault();
+      if (openedMessage) setOpenedMessage(null);
+      else if (!showConversationProfile) onBack();
+    };
+    document.addEventListener('keydown', goBackOnEscape);
+    return () => document.removeEventListener('keydown', goBackOnEscape);
+  }, [onBack, openedMessage, showConversationProfile]);
 
   const handleSend = async (body: string, files: File[]): Promise<void> => {
     setSending(true);

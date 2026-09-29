@@ -35,8 +35,18 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
     const closeMenu = (event: MouseEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
     };
+    const closeMenuOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setMenuOpen(false);
+    };
     document.addEventListener('mousedown', closeMenu);
-    return () => document.removeEventListener('mousedown', closeMenu);
+    document.addEventListener('keydown', closeMenuOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeMenu);
+      document.removeEventListener('keydown', closeMenuOnEscape);
+    };
   }, [menuOpen]);
 
   const handleTouchStart = (e: TouchEvent) => {

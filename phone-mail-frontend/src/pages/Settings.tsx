@@ -8,9 +8,10 @@ import {
   Palette,
   ShieldCheck,
   SlidersHorizontal,
+  UserRound,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { useLanguage } from '../context/LanguageProvider';
 import { isLanguageCode, LANGUAGES, type TranslationKey } from '../utils/i18n';
@@ -89,9 +90,21 @@ function readPreference(key: string, defaultValue: boolean) {
 
 export default function Settings() {
   const { section } = useParams();
+  const navigate = useNavigate();
   const { language, setLanguage, t } = useLanguage();
   const option = OPTIONS.find((item) => item.id === section);
   const [enabled, setEnabled] = useState(true);
+
+  useEffect(() => {
+    if (!section) return;
+    const goBackOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      event.preventDefault();
+      navigate('/settings');
+    };
+    document.addEventListener('keydown', goBackOnEscape);
+    return () => document.removeEventListener('keydown', goBackOnEscape);
+  }, [navigate, section]);
 
   useEffect(() => {
     if (option && PREFERENCE_KEYS[option.id]) {
@@ -175,6 +188,19 @@ export default function Settings() {
         <p className="mt-1 text-sm text-slate-500">{t('settingsDescription')}</p>
       </div>
       <div className="space-y-3">
+        <Link
+          to="/profile"
+          className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+        >
+          <span className="grid size-10 place-items-center rounded-xl bg-blue-50 text-[#1a66ff]">
+            <UserRound className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <strong className="block text-sm text-slate-800">{t('editProfile')}</strong>
+            <span className="text-xs text-slate-500">{t('yourProfile')}</span>
+          </span>
+          <ChevronRight className="size-5 text-slate-400" />
+        </Link>
         {OPTIONS.map((item) => {
           const Icon = item.icon;
           return (
