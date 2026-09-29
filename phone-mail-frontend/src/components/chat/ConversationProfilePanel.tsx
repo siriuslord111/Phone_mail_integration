@@ -1,6 +1,8 @@
-import { ArrowLeft, Camera, FileText, Image, Link2, PlaySquare, UserMinus, UserPlus, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import type { Conversation, Message, Participant } from '../../types';
+import { ArrowLeft, Camera, Download, FileText, Image, Link2, PlaySquare, UserMinus, UserPlus, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { getErrorMessage } from '../../api/axios';
+import { downloadAttachment } from '../../api/email.api';
+import type { Attachment, Conversation, Message, Participant } from '../../types';
 import { getInitials, avatarColor } from '../../utils/formatters';
 import { useLanguage } from '../../context/LanguageProvider';
 
@@ -11,6 +13,12 @@ interface ConversationProfilePanelProps {
   onSave: (patch: Pick<Conversation, 'title' | 'avatarUrl' | 'description' | 'participants'>) => Promise<void>;
   onSaveNickname: (nickname: string) => Promise<void>;
 }
+
+type SharedCategory = 'photos' | 'files' | 'links' | 'media';
+
+const PHOTO_EXTENSIONS = /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i;
+const MEDIA_EXTENSIONS = /\.(aac|flac|m4a|mkv|mov|mp3|mp4|ogg|wav|webm)$/i;
+const LINK_PATTERN = /https?:\/\/[^\s<>"']+/gi;
 
 export function ConversationProfilePanel({ conversation, messages, onClose, onSave, onSaveNickname }: ConversationProfilePanelProps) {
   const { t } = useLanguage();
@@ -25,8 +33,29 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   const [nicknameSaving, setNicknameSaving] = useState(false);
   const [nicknameSaved, setNicknameSaved] = useState(false);
   const [nicknameError, setNicknameError] = useState('');
+  const [sharedCategory, setSharedCategory] = useState<SharedCategory | null>(null);
+  const [attachmentError, setAttachmentError] = useState('');
   const isAdmin = conversation.isGroup;
-  const attachments = messages.flatMap((message) => message.attachments ?? []);
+  const sharedItems = useMemo(() => {
+    const photos: Attachment[] = [];
+    const files: Attachment[] = [];
+    const media: Attachment[] = [];
+    const links = new Map<string, string>();
+
+    for (const message of messages) {
+      for (const attachment of message.attachments ?? []) {
+        if (PHOTO_EXTENSIONS.test(attachment.name)) photos.push(attachment);
+        else if (MEDIA_EXTENSIONS.test(attachment.name)) media.push(attachment);
+        else files.push(attachment);
+      }
+      for (const match of message.body.matchAll(LINK_PATTERN)) {
+        const url = match[0].replace(/[),.!?;:}\]]+$/, '');
+        links.set(url, url);
+      }
+    }
+
+    return { photos, files, links: [...links.values()], media };
+  }, [messages]);
 
   useEffect(() => {
     if (!photoOpen) return;
@@ -171,9 +200,49 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
       <section className="mt-2 bg-white p-4">
         <h3 className="mb-3 font-semibold text-slate-800">{t('sharedContent')}</h3>
         <div className="grid grid-cols-4 gap-2 text-center text-xs text-slate-500">
-          <Shared icon={Image} label={t('photos')} /><Shared icon={FileText} label={t('files')} count={attachments.length} /><Shared icon={Link2} label={t('links')} /><Shared icon={PlaySquare} label={t('media')} />
+          <Shared icon={Image} label={t('photos')} count={sharedItems.photos.length} active={sharedCategory === 'photos'} onClick={() => { setSharedCategory('photos'); setAttachmentError(''); }} />
+          <Shared icon={FileText} label={t('files')} count={sharedItems.files.length} active={sharedCategory === 'files'} onClick={() => { setSharedCategory('files'); setAttachmentError(''); }} />
+          <Shared icon={Link2} label={t('links')} count={sharedItems.links.length} active={sharedCategory === 'links'} onClick={() => { setSharedCategory('links'); setAttachmentError(''); }} />
+          <Shared icon={PlaySquare} label={t('media')} count={sharedItems.media.length} active={sharedCategory === 'media'} onClick={() => { setSharedCategory('media'); setAttachmentError(''); }} />
         </div>
-        {attachments.length > 0 && <div className="mt-3 space-y-2">{attachments.map((attachment) => <div key={attachment.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{attachment.name}</div>)}</div>}
+        {sharedCategory && (
+          <div className="mt-3 space-y-2">
+            {sharedCategory === 'links' ? (
+              sharedItems.links.map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block break-all rounded-lg bg-slate-50 px-3 py-2 text-sm text-[#1a66ff] underline underline-offset-2"
+                >
+                  {url}
+                </a>
+              ))
+            ) : (
+              sharedItems[sharedCategory].map((attachment) => (
+                <button
+                  key={attachment.id}
+                  type="button"
+                  onClick={() => {
+                    setAttachmentError('');
+                    void downloadAttachment(attachment.id, attachment.name).catch((error: unknown) => {
+                      setAttachmentError(getErrorMessage(error, t('couldNotDownloadAttachment')));
+                    });
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100"
+                >
+                  <Download className="size-4 shrink-0 text-[#1a66ff]" />
+                  <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+                </button>
+              ))
+            )}
+            {sharedItems[sharedCategory].length === 0 && (
+              <p className="rounded-lg bg-slate-50 px-3 py-3 text-center text-sm text-slate-500">{t('noSharedItems')}</p>
+            )}
+            {attachmentError && <p role="alert" className="text-sm text-rose-600">{attachmentError}</p>}
+          </div>
+        )}
       </section>
 
       {isAdmin && <button disabled={saving} onClick={save} className="m-4 rounded-xl bg-[#1a66ff] py-3 font-semibold text-white disabled:opacity-60">{saving ? t('saving') : t('saveGroupChanges')}</button>}
@@ -206,6 +275,17 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   );
 }
 
-function Shared({ icon: Icon, label, count }: { icon: typeof Image; label: string; count?: number }) {
-  return <div className="rounded-xl bg-slate-50 p-3"><Icon className="mx-auto mb-1 size-5 text-[#1a66ff]" />{label}{count ? ` (${count})` : ''}</div>;
+function Shared({ icon: Icon, label, count, active, onClick }: { icon: typeof Image; label: string; count: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`rounded-xl p-3 transition-colors ${active ? 'bg-blue-50 text-[#1a66ff] ring-1 ring-blue-200' : 'bg-slate-50 hover:bg-blue-50'}`}
+    >
+      <Icon className="mx-auto mb-1 size-5 text-[#1a66ff]" />
+      {label}
+      <span className="ml-1">({count})</span>
+    </button>
+  );
 }
