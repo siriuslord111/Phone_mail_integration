@@ -21,8 +21,9 @@ Then open:
 ## Authentication setup
 
 Password accounts use Argon2id hashes, and sign-in attempts are rate-limited.
-Account records are stored in PostgreSQL; the API synchronizes the Prisma
-schema before starting. Messages and OTP challenges remain in memory for now.
+Account records, local messages, and group conversations are stored in
+PostgreSQL; the API synchronizes the Prisma schema before starting. OTP
+challenges and external-only mail history remain in memory.
 Set `AUTH_TOKEN_SECRET` to a random value of at least 32 bytes for stable signed
 sessions; without it, the backend creates a temporary secret at startup and
 sessions are invalidated when the process restarts.
@@ -41,6 +42,11 @@ The `dev`, `test`, and `build` scripts generate the Prisma client automatically.
 Profile names, About descriptions, and photos are shared with other users in
 conversation lists and contact details. Profile photos can be PNG, JPEG, WebP,
 or GIF images up to 2 MB.
+
+Composing a message to multiple PhoneMail accounts creates a persistent group
+conversation for those accounts. Replies stay in that group; composing to one
+PhoneMail account continues in that person's one-to-one conversation. External
+email recipients continue to use normal email delivery.
 
 ## Local inbound email testing
 

@@ -20,6 +20,7 @@ import { useLanguage } from '../context/LanguageProvider';
 import type { TranslationKey } from '../utils/i18n';
 import type { LucideIcon } from 'lucide-react';
 import { ComposeModal } from '../components/mail/ComposeModal';
+import type { Message } from '../types';
 
 interface NavItem {
   to: string;
@@ -70,6 +71,29 @@ export default function MainLayout() {
   useEffect(() => setDrawerOpen(false), [pathname]);
 
   useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (logoutConfirmOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setLogoutConfirmOpen(false);
+      } else if (document.querySelector('[role="dialog"]')) {
+        return;
+      } else if (drawerOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setDrawerOpen(false);
+      } else if (menuOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [drawerOpen, logoutConfirmOpen, menuOpen]);
+
+  useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
@@ -90,6 +114,11 @@ export default function MainLayout() {
       delete next.compose;
       return next;
     });
+  const handleComposeSent = (message: Message) => {
+    setParams(message.isGroup && message.conversationId
+      ? { chat: message.conversationId }
+      : {});
+  };
 
   const outletContext: LayoutContext = { search, setSearch };
 
@@ -99,7 +128,7 @@ export default function MainLayout() {
         'flex items-center gap-4 rounded-full text-sm transition-all duration-200',
         collapsed ? 'size-12 justify-center' : 'h-11 px-4',
         isActive
-          ? 'bg-[#d9e7ff] font-semibold text-[#0b4fe0] shadow-sm'
+          ? 'sidebar-active-link bg-[#d9e7ff] font-semibold text-[#0b4fe0] shadow-sm'
           : 'text-slate-600 hover:bg-slate-200/60',
       );
 
@@ -114,9 +143,9 @@ export default function MainLayout() {
           </div>
 
           <div className="relative flex items-center justify-between">
-            <button
-              onClick={() => setDrawerOpen(true)}
-              aria-label={t('openMenu')}
+            <Link
+              to="/"
+              aria-label={t('inbox')}
               className="flex items-center gap-2.5 rounded-xl transition active:scale-95"
             >
               <span className="grid size-9 place-items-center rounded-xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
@@ -125,7 +154,7 @@ export default function MainLayout() {
               <span className="font-serif text-xl font-bold tracking-tight">
                 Phone<span className="text-blue-200">Mail</span>
               </span>
-            </button>
+            </Link>
 
             <button
               onClick={() => setDrawerOpen(true)}
@@ -161,14 +190,18 @@ export default function MainLayout() {
           >
             <Menu className="size-5" />
           </button>
-          <span className="inline-flex items-center gap-2.5">
+          <Link
+            to="/"
+            aria-label={t('inbox')}
+            className="inline-flex items-center gap-2.5 rounded-xl transition active:scale-95"
+          >
             <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#1a66ff] to-[#4d8bff] shadow-md shadow-blue-500/30">
               <Smartphone className="size-5 text-white" strokeWidth={2.2} />
             </span>
             <span className="font-serif text-xl font-bold tracking-tight text-slate-900">
               Phone<span className="text-[#1a66ff]">Mail</span>
             </span>
-          </span>
+          </Link>
         </div>
 
         {searchVisible && (
@@ -377,7 +410,7 @@ export default function MainLayout() {
           lockedTo={composeMode !== '1' && !composeMode.startsWith('draft:') ? composeMode : undefined}
           draftId={composeMode.startsWith('draft:') ? composeMode.slice('draft:'.length) : undefined}
           onClose={closeCompose}
-          onSent={closeCompose}
+          onSent={handleComposeSent}
         />
       )}
 

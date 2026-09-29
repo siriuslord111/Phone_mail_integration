@@ -27,8 +27,10 @@ export interface Attachment {
 export interface Message {
   id: string;
   conversationId: string;
+  isGroup?: boolean;
   direction: 'in' | 'out';
   fromPhone: string;
+  senderName?: string;
   subject?: string;
   body: string;
   createdAt: string; // ISO
@@ -72,6 +74,7 @@ export interface SendPayload {
   cc?: string[];
   subject?: string;
   body: string;
+  conversationId?: string;
   inReplyTo?: string;
   attachments?: File[];
 }

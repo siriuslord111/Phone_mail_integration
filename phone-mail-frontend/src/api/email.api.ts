@@ -122,7 +122,13 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
     await demoDelay(250);
     const conv = demoConversations.find((c) => c.id === conversationId);
     if (conv) conv.unreadCount = 0; // opening a chat marks it read, like WhatsApp
-    return demoMessages[conversationId] ?? [];
+    return (demoMessages[conversationId] ?? []).map((message) => ({
+      ...message,
+      isGroup: conv?.isGroup ?? message.isGroup,
+      senderName: conv?.isGroup
+        ? conv.participants.find((participant) => participant.phone === message.fromPhone)?.name
+        : message.senderName,
+    }));
   }
   const { data } = await api.get(`/conversations/${conversationId}/messages`);
   return data.messages ?? data;
@@ -132,12 +138,17 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
 export async function sendMessage(payload: SendPayload): Promise<Message> {
   if (DEMO_MODE) {
     await demoDelay(400);
-    const toPhone = payload.to[0];
-    let conv = demoConversations.find(
-      (c) => !c.isGroup && c.participants.some((p) => p.phone === toPhone),
-    );
-
     const isGroup = payload.to.length > 1;
+    const toPhone = payload.to[0];
+    let conv = payload.conversationId
+      ? demoConversations.find((item) => item.id === payload.conversationId)
+      : isGroup
+        ? demoConversations.find((item) => item.isGroup
+          && item.participants.filter((participant) => participant.phone !== ME).length === payload.to.length
+          && payload.to.every((phone) => item.participants.some((participant) => participant.phone === phone)))
+        : demoConversations.find((item) => !item.isGroup
+          && item.participants.some((participant) => participant.phone === toPhone));
+
     if (!conv) {
       conv = {
         id: `c${demoConversations.length + 1}-${Date.now()}`,
@@ -145,7 +156,10 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
           ? payload.to.map((p) => CONTACTS[p] ?? p).join(', ')
           : CONTACTS[toPhone] ?? toPhone,
         isGroup,
-        participants: payload.to.map((phone) => ({ phone, name: CONTACTS[phone] ?? phone })),
+        participants: [
+          ...payload.to.map((phone) => ({ phone, name: CONTACTS[phone] ?? phone })),
+          ...(isGroup ? [{ phone: ME, name: 'You' }] : []),
+        ],
         lastMessage: { preview: '', createdAt: new Date().toISOString(), hasAttachment: false, direction: 'out' },
         unreadCount: 0,
         isFavourite: false,
@@ -174,6 +188,7 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
       status: 'sent',
       attachments: payload.attachments?.map((f, i) => ({ id: `f${i}`, name: f.name, size: f.size })),
     };
+    if (isGroup) msg.isGroup = true;
 
     demoMessages[conv.id] = [...(demoMessages[conv.id] ?? []), msg];
     conv.lastMessage = {
@@ -183,12 +198,15 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
       hasAttachment: Boolean(msg.attachments?.length),
       direction: 'out',
     };
+    persistDemoMail();
     return msg;
   }
 
   const form = new FormData();
   payload.to.forEach((recipient) => form.append('to[]', recipient));
+  if (payload.conversationId) form.append('conversationId', payload.conversationId);
   if (payload.subject) form.append('subject', payload.subject);
+  if (payload.inReplyTo) form.append('inReplyTo', payload.inReplyTo);
   form.append('body', payload.body);
   payload.attachments?.forEach((file) => form.append('attachments', file));
 
@@ -198,6 +216,8 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
         to: payload.to,
         subject: payload.subject,
         body: payload.body,
+        conversationId: payload.conversationId,
+        inReplyTo: payload.inReplyTo,
       });
   return data.message ?? data;
 }
@@ -228,7 +248,7 @@ export async function toggleFavourite(conversationId: string, value: boolean): P
 
 export async function updateConversation(
   conversationId: string,
-  patch: Pick<Conversation, 'title' | 'avatarUrl' | 'description' | 'participants'>,
+  patch: Pick<Conversation, 'title' | 'avatarUrl' | 'description'>,
 ): Promise<Conversation> {
   if (DEMO_MODE) {
     await demoDelay(180);

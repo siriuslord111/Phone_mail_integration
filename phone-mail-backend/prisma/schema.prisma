@@ -9,22 +9,25 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(uuid())
-  phoneNumber   String         @unique
-  email         String         @unique
-  passwordHash  String? // Argon2id hash for password fallback accounts
-  aliasIds      String[]       @default([])
-  language      String         @default("en")
-  profilePic    String?
-  name          String?
-  bio           String?
-  hasMobileApp  Boolean        @default(false) // Used to determine if SMS notifications are needed[cite: 1]
-  conversations Conversation[]
-  inboundEmails InboundEmail[]
-  mailMessages  MailMessage[]
-  contactNicknames ContactNickname[]
-  drafts        MailDraft[]
-  createdAt     DateTime       @default(now())
+  id                   String                     @id @default(uuid())
+  phoneNumber          String                     @unique
+  email                String                     @unique
+  passwordHash         String? // Argon2id hash for password fallback accounts
+  aliasIds             String[]                   @default([])
+  language             String                     @default("en")
+  profilePic           String?
+  name                 String?
+  bio                  String?
+  hasMobileApp         Boolean                    @default(false) // Used to determine if SMS notifications are needed[cite: 1]
+  conversations        Conversation[]
+  inboundEmails        InboundEmail[]
+  mailMessages         MailMessage[]
+  contactNicknames     ContactNickname[]
+  drafts               MailDraft[]
+  groupMemberships     GroupChatMember[]
+  sentGroupMessages    GroupChatMessage[]
+  deletedGroupMessages GroupChatMessageDeletion[]
+  createdAt            DateTime                   @default(now())
 }
 
 model ContactNickname {
@@ -82,20 +85,20 @@ model InboundEmail {
 }
 
 model MailMessage {
-  id          String   @id @default(uuid())
+  id          String           @id @default(uuid())
   messageId   String
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   peerAddress String
   fromAddress String
   toAddress   String
   subject     String
   body        String
   direction   String
-  mailbox     String   @default("inbox")
-  isRead      Boolean  @default(false)
-  isStarred   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  mailbox     String           @default("inbox")
+  isRead      Boolean          @default(false)
+  isStarred   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
   attachments MailAttachment[]
 
   @@unique([messageId, userId])
@@ -125,4 +128,69 @@ model MailDraft {
   updatedAt  DateTime @updatedAt
 
   @@index([userId, updatedAt])
+}
+
+model GroupChat {
+  id          String             @id @default(uuid())
+  name        String             @default("")
+  description String             @default("")
+  avatarUrl   String             @default("")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  members     GroupChatMember[]
+  messages    GroupChatMessage[]
+}
+
+model GroupChatMember {
+  id          String    @id @default(uuid())
+  groupChatId String
+  groupChat   GroupChat @relation(fields: [groupChatId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt  DateTime?
+  isFavourite Boolean   @default(false)
+
+  @@unique([groupChatId, userId])
+  @@index([userId, groupChatId])
+}
+
+model GroupChatMessage {
+  id          String                     @id @default(uuid())
+  groupChatId String
+  groupChat   GroupChat                  @relation(fields: [groupChatId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User                       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  subject     String                     @default("")
+  body        String
+  replyToId   String?
+  isStarred   Boolean                    @default(false)
+  createdAt   DateTime                   @default(now())
+  attachments GroupChatAttachment[]
+  deletions   GroupChatMessageDeletion[]
+
+  @@index([groupChatId, createdAt])
+}
+
+model GroupChatMessageDeletion {
+  id        String           @id @default(uuid())
+  messageId String
+  message   GroupChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deletedAt DateTime         @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId, messageId])
+}
+
+model GroupChatAttachment {
+  id        String           @id @default(uuid())
+  messageId String
+  message   GroupChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  filename  String
+  mimeType  String
+  size      Int
+  content   Bytes
+
+  @@index([messageId])
 }

@@ -1,4 +1,5 @@
 import { Paperclip, Search, Star, Users } from 'lucide-react';
+import { useRef } from 'react';
 import { cn } from '../../utils/cn';
 import { formatListTime, getContactInitials, avatarColor } from '../../utils/formatters';
 import { MailListSkeleton } from '../common/LoadingSpinner';
@@ -35,9 +36,50 @@ export function MailList({
   compact = false,
 }: MailListProps) {
   const { t } = useLanguage();
+  const drag = useRef<{ pointerId: number; startX: number; startScrollLeft: number; moved: boolean; captured: boolean } | null>(null);
+  const suppressClick = useRef(false);
+
   return (
     <div className="flex h-full flex-col">
-      <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-3 pt-3 md:px-5 md:pt-4">
+      <div
+        className="no-scrollbar flex touch-pan-x cursor-grab select-none gap-2 overflow-x-auto overscroll-x-contain px-4 pb-3 pt-3 active:cursor-grabbing md:px-5 md:pt-4"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          suppressClick.current = false;
+          drag.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startScrollLeft: event.currentTarget.scrollLeft,
+            moved: false,
+            captured: false,
+          };
+        }}
+        onPointerMove={(event) => {
+          const currentDrag = drag.current;
+          if (!currentDrag || currentDrag.pointerId !== event.pointerId) return;
+          const deltaX = event.clientX - currentDrag.startX;
+          if (Math.abs(deltaX) > 5 && !currentDrag.moved) {
+            currentDrag.moved = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            currentDrag.captured = true;
+          }
+          if (currentDrag.moved) event.currentTarget.scrollLeft = currentDrag.startScrollLeft - deltaX;
+        }}
+        onPointerUp={(event) => {
+          if (drag.current?.pointerId !== event.pointerId) return;
+          suppressClick.current = drag.current.moved;
+          drag.current = null;
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
+        onClickCapture={(event) => {
+          if (!suppressClick.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+          suppressClick.current = false;
+        }}
+      >
         {FILTERS.map((f) => (
           <button
             key={f.id}
