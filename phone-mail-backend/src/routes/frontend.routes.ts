@@ -4,7 +4,7 @@ import { addMessage, messages, normalizePhone } from '../store';
 import { requireAuth } from '../middlewares/auth';
 import { sendOutboundEmail } from '../services/email.service';
 import { normalizeRecipients } from '../services/email-recipient';
-import { findAccountsByPhones, memoryStoreEnabled, updateAccount } from '../services/account.service';
+import { findAccountByEmail, findAccountsByPhones, memoryStoreEnabled, updateAccount } from '../services/account.service';
 import { getContactNicknames, saveContactNickname } from '../services/contact-nickname.service';
 import { prisma } from '../config/prisma';
 import { CannotSendToSelfError, deliverEmail, UnknownPhoneMailRecipientError } from '../services/email-delivery.service';
@@ -37,6 +37,51 @@ function peerForMessage(message: { from: string; to: string[] }, phone: string) 
   return message.from === phone
     ? participantKey(message.to[0] ?? '')
     : participantKey(message.from);
+}
+
+const GROUP_CONVERSATION_PREFIX = 'group-';
+const GROUP_MESSAGE_PREFIX = 'group-message-';
+
+function groupConversationId(id: string) {
+  return `${GROUP_CONVERSATION_PREFIX}${id}`;
+}
+
+function groupMessageId(id: string) {
+  return `${GROUP_MESSAGE_PREFIX}${id}`;
+}
+
+function groupMessageView(message: {
+  id: string;
+  groupChatId: string;
+  sender: { phoneNumber: string; name: string | null };
+  subject: string;
+  body: string;
+  createdAt: Date;
+  isStarred: boolean;
+  replyToId: string | null;
+  attachments: Array<{ id: string; filename: string; size: number }>;
+}, userPhone: string) {
+  return {
+    id: groupMessageId(message.id),
+    conversationId: groupConversationId(message.groupChatId),
+    isGroup: true,
+    fromPhone: message.sender.phoneNumber,
+    senderName: message.sender.name || message.sender.phoneNumber,
+    direction: message.sender.phoneNumber === userPhone ? 'out' as const : 'in' as const,
+    subject: message.subject,
+    body: message.body,
+    createdAt: message.createdAt.toISOString(),
+    read: true,
+    isStarred: message.isStarred,
+    isReply: Boolean(message.replyToId),
+    inReplyToId: message.replyToId ? groupMessageId(message.replyToId) : undefined,
+    attachments: message.attachments.map((attachment) => ({
+      id: attachment.id,
+      name: attachment.filename,
+      size: attachment.size,
+      url: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+    })),
+  };
 }
 
 type ConversationEntry = {
@@ -329,6 +374,89 @@ async function listConversations(req: Request, res: Response) {
     .sort((left, right) =>
       right.lastMessage.createdAt.localeCompare(left.lastMessage.createdAt),
     );
+  if (!memoryStoreEnabled) {
+    const memberships = await prisma.groupChatMember.findMany({
+      where: { userId: user.id },
+      include: {
+        groupChat: {
+          include: { members: { include: { user: true } } },
+        },
+      },
+    });
+    for (const membership of memberships) {
+      const group = membership.groupChat;
+      const groupMessages = await prisma.groupChatMessage.findMany({
+        where: { groupChatId: group.id },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          senderId: true,
+          subject: true,
+          body: true,
+          createdAt: true,
+          attachments: { select: { id: true } },
+        },
+      });
+      const deletedGroupMessages = await prisma.groupChatMessageDeletion.findMany({
+        where: { userId: user.id, message: { groupChatId: group.id } },
+        select: { messageId: true },
+      });
+      const deletedMessageIds = new Set(deletedGroupMessages.map(({ messageId }) => messageId));
+      const visibleMessages = groupMessages.filter((message) =>
+        !deletedMessageIds.has(message.id) &&
+          (folder === 'inbox'
+            ? true
+            : folder === 'sent'
+              ? message.senderId === user.id
+              : false),
+      );
+      if (visibleMessages.length === 0) continue;
+      const last = visibleMessages[visibleMessages.length - 1];
+      const participants = group.members.map(({ user: member }) => ({
+        phone: member.phoneNumber,
+        name: member.name || member.phoneNumber,
+        avatarUrl: member.profilePic ?? undefined,
+        bio: member.bio ?? undefined,
+      }));
+      const title = group.name || participants
+        .filter((participant) => participant.phone !== userPhone)
+        .map((participant) => participant.name)
+        .join(', ');
+      const haystack = `${title} ${group.description} ${visibleMessages.map((message) => `${message.subject} ${message.body}`).join(' ')}`.toLowerCase();
+      const unreadCount = groupMessages.filter((message) =>
+        !deletedMessageIds.has(message.id) &&
+        message.senderId !== user.id &&
+        (!membership.lastReadAt || message.createdAt > membership.lastReadAt),
+      ).length;
+      if (filter === 'unread' && unreadCount === 0) continue;
+      if (filter === 'favourites' && !membership.isFavourite) continue;
+      if (filter === 'attachments' && !visibleMessages.some((message) => message.attachments.length > 0)) continue;
+      if (query && !haystack.includes(query)) continue;
+      conversations.push({
+        id: groupConversationId(group.id),
+        title: title || 'Group chat',
+        actualName: title || 'Group chat',
+        nickname: '',
+        isGroup: true,
+        avatarUrl: group.avatarUrl || undefined,
+        description: group.description || undefined,
+        participants,
+        lastMessage: {
+          preview: last.body,
+          subject: last.subject,
+          createdAt: last.createdAt.toISOString(),
+          hasAttachment: last.attachments.length > 0,
+          direction: last.senderId === user.id ? 'out' : 'in',
+        },
+        unreadCount,
+        isFavourite: membership.isFavourite,
+        hasAttachments: visibleMessages.some((message) => message.attachments.length > 0),
+      });
+    }
+    conversations.sort((left, right) =>
+      right.lastMessage.createdAt.localeCompare(left.lastMessage.createdAt),
+    );
+  }
   return res.json({ conversations });
 }
 
@@ -338,8 +466,40 @@ router.get('/conversations/:id/messages', (req, res, next) => {
 
 async function listConversationMessages(req: Request, res: Response) {
   const conversationId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const peer = participantKey(conversationId.replace(/^conversation-/, ''));
   const user = res.locals.authenticatedUser;
+  if (conversationId.startsWith(GROUP_CONVERSATION_PREFIX) && !memoryStoreEnabled) {
+    const groupId = conversationId.slice(GROUP_CONVERSATION_PREFIX.length);
+    const membership = await prisma.groupChatMember.findFirst({
+      where: { groupChatId: groupId, userId: user.id },
+    });
+    if (!membership) return res.status(404).json({ message: 'Group conversation not found.' });
+    const groupMessages = await prisma.groupChatMessage.findMany({
+      where: { groupChatId: groupId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        sender: { select: { phoneNumber: true, name: true } },
+        attachments: { select: { id: true, filename: true, size: true } },
+      },
+    });
+    const deletedGroupMessages = await prisma.groupChatMessageDeletion.findMany({
+      where: { userId: user.id, message: { groupChatId: groupId } },
+      select: { messageId: true },
+    });
+    const deletedMessageIds = new Set(deletedGroupMessages.map(({ messageId }) => messageId));
+    await prisma.groupChatMember.update({
+      where: { id: membership.id },
+      data: { lastReadAt: new Date() },
+    });
+    const visibleMessages = groupMessages.filter((message) => !deletedMessageIds.has(message.id));
+    const byId = new Map(visibleMessages.map((message) => [message.id, message]));
+    return res.json({
+      messages: visibleMessages.map((message) => ({
+        ...groupMessageView(message, user.phoneNumber),
+        quotedText: message.replyToId ? byId.get(message.replyToId)?.body : undefined,
+      })),
+    });
+  }
+  const peer = participantKey(conversationId.replace(/^conversation-/, ''));
   const userPhone = user.phoneNumber;
   const result = messages.filter((message) =>
     isMessageForUser(message, userPhone, user.email) &&
@@ -394,11 +554,21 @@ router.post('/messages', (req, res, next) => {
     return next(error);
   });
 }, async (req, res) => {
+  const requestedConversationId = typeof req.body?.conversationId === 'string'
+    ? req.body.conversationId
+    : '';
+  const requestedGroupId = requestedConversationId.startsWith(GROUP_CONVERSATION_PREFIX)
+    ? requestedConversationId.slice(GROUP_CONVERSATION_PREFIX.length)
+    : '';
   let recipients: string[];
-  try {
-    recipients = normalizeRecipients(req.body?.to ?? req.body?.['to[]']);
-  } catch (error) {
-    return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid recipient.' });
+  if (requestedGroupId) {
+    recipients = [];
+  } else {
+    try {
+      recipients = normalizeRecipients(req.body?.to ?? req.body?.['to[]']);
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid recipient.' });
+    }
   }
   const subject = String(req.body?.subject ?? 'New message').trim();
   const body = typeof req.body?.body === 'string' ? req.body.body : '';
@@ -408,18 +578,141 @@ router.post('/messages', (req, res, next) => {
     return res.status(400).json({ message: 'Subject must be 200 characters or fewer and contain no line breaks.' });
   }
 
-  const sender = res.locals.authenticatedUser.phoneNumber;
+  const senderAccount = res.locals.authenticatedUser;
+  const sender = senderAccount.phoneNumber;
+  const attachments = files.map((file) => ({
+    filename: file.originalname,
+    contentType: file.mimetype,
+    content: file.buffer,
+  }));
   try {
+    if (requestedGroupId && memoryStoreEnabled) {
+      return res.status(503).json({ message: 'Group conversations require persistent storage.' });
+    }
+    if (requestedGroupId && !memoryStoreEnabled) {
+      const membership = await prisma.groupChatMember.findFirst({
+        where: { groupChatId: requestedGroupId, userId: senderAccount.id },
+      });
+      if (!membership) return res.status(404).json({ message: 'Group conversation not found.' });
+      const replyToId = typeof req.body?.inReplyTo === 'string'
+        ? req.body.inReplyTo.replace(/^group-message-/, '')
+        : undefined;
+      if (replyToId && !await prisma.groupChatMessage.findFirst({
+        where: { id: replyToId, groupChatId: requestedGroupId },
+        select: { id: true },
+      })) {
+        return res.status(400).json({ message: 'The reply target is not in this group conversation.' });
+      }
+      const message = await prisma.groupChatMessage.create({
+        data: {
+          groupChatId: requestedGroupId,
+          senderId: senderAccount.id,
+          subject,
+          body: body.trim(),
+          replyToId: replyToId ?? null,
+          attachments: {
+            create: attachments.map((attachment) => ({
+              filename: attachment.filename,
+              mimeType: attachment.contentType,
+              size: attachment.content.length,
+              content: new Uint8Array(attachment.content),
+            })),
+          },
+        },
+        include: {
+          sender: { select: { phoneNumber: true, name: true } },
+          attachments: { select: { id: true, filename: true, size: true } },
+        },
+      });
+      await prisma.groupChat.update({
+        where: { id: requestedGroupId },
+        data: { updatedAt: new Date() },
+      });
+      const messageView = groupMessageView(message, sender);
+      return res.status(201).json({
+        message: messageView,
+        delivery: { delivered: true, localRecipients: 0, externalRecipients: 0 },
+      });
+    }
+
+    const internalGroupRecipients = recipients.length > 1 &&
+      recipients.every((recipient) => recipient.endsWith('@phonemail.com'));
+    if (internalGroupRecipients && memoryStoreEnabled) {
+      return res.status(503).json({ message: 'Group conversations require persistent storage.' });
+    }
+    if (internalGroupRecipients && !memoryStoreEnabled) {
+      const recipientAccounts = await Promise.all(recipients.map((recipient) => findAccountByEmail(recipient)));
+      if (recipientAccounts.some((account) => !account)) {
+        throw new UnknownPhoneMailRecipientError(recipients[recipientAccounts.findIndex((account) => !account)]);
+      }
+      if (recipientAccounts.some((account) => account?.id === senderAccount.id)) {
+        throw new CannotSendToSelfError();
+      }
+      const members = [senderAccount, ...recipientAccounts.filter((account) => account !== undefined)]
+        .filter((account, index, all) => all.findIndex((item) => item.id === account.id) === index);
+      const memberIds = members.map((member) => member.id);
+      const candidateGroups = await prisma.groupChat.findMany({
+        where: {
+          members: {
+            some: { userId: senderAccount.id },
+            every: { userId: { in: memberIds } },
+          },
+        },
+        include: { members: { select: { userId: true } } },
+        orderBy: { updatedAt: 'desc' },
+      });
+      const existingGroup = candidateGroups.find((group) =>
+        group.members.length === memberIds.length &&
+        memberIds.every((memberId) => group.members.some((member) => member.userId === memberId)),
+      );
+      const result = await prisma.$transaction(async (transaction) => {
+        const group = existingGroup ?? await transaction.groupChat.create({ data: { name: '' } });
+        if (!existingGroup) {
+          await transaction.groupChatMember.createMany({
+            data: members.map((member) => ({ groupChatId: group.id, userId: member.id })),
+          });
+        }
+        const message = await transaction.groupChatMessage.create({
+          data: {
+            groupChatId: group.id,
+            senderId: senderAccount.id,
+            subject,
+            body: body.trim(),
+            attachments: {
+              create: attachments.map((attachment) => ({
+                filename: attachment.filename,
+                mimeType: attachment.contentType,
+                size: attachment.content.length,
+                content: new Uint8Array(attachment.content),
+              })),
+            },
+          },
+          include: {
+            sender: { select: { phoneNumber: true, name: true } },
+            attachments: { select: { id: true, filename: true, size: true } },
+          },
+        });
+        return { group, message };
+      });
+      return res.status(201).json({
+        message: {
+          ...groupMessageView(result.message, sender),
+          conversationId: groupConversationId(result.group.id),
+        },
+        delivery: {
+          delivered: true,
+          localRecipients: recipientAccounts.length,
+          externalRecipients: 0,
+        },
+      });
+    }
+
     const delivery = await deliverEmail({
-      sender: res.locals.authenticatedUser,
+      sender: senderAccount,
       recipients,
       subject,
       body,
-      attachments: files.map((file) => ({
-        filename: file.originalname,
-        contentType: file.mimetype,
-        content: file.buffer,
-      })),
+      attachments,
     });
     if (delivery.externalRecipients > 0) {
       const externalRecipients = recipients.filter((recipient) => !recipient.endsWith('@phonemail.com'));
@@ -446,6 +739,9 @@ router.post('/messages', (req, res, next) => {
       read: false,
       direction: 'out' as const,
       mailbox: 'sent' as const,
+      conversationId: recipients.length === 1 && recipients[0].endsWith('@phonemail.com')
+        ? `conversation-${participantKey(recipients[0])}`
+        : undefined,
       isReply: Boolean(req.body?.inReplyTo),
       attachments: files.length > 0
         ? (delivery.attachments.length > 0
@@ -480,6 +776,18 @@ router.post('/messages', (req, res, next) => {
 
 router.get('/attachments/:id', async (req, res, next) => {
   try {
+    const groupAttachment = await prisma.groupChatAttachment.findFirst({
+      where: {
+        id: req.params.id,
+        message: { groupChat: { members: { some: { userId: res.locals.authenticatedUser.id } } } },
+      },
+      select: { filename: true, mimeType: true, content: true },
+    });
+    if (groupAttachment) {
+      res.type(groupAttachment.mimeType || 'application/octet-stream');
+      res.attachment(groupAttachment.filename);
+      return res.send(Buffer.from(groupAttachment.content));
+    }
     const attachment = await prisma.mailAttachment.findFirst({
       where: {
         id: req.params.id,
@@ -546,6 +854,47 @@ router.patch('/messages/:id', async (req, res, next) => {
   }
   const user = res.locals.authenticatedUser;
   try {
+    if (id.startsWith(GROUP_MESSAGE_PREFIX) && !memoryStoreEnabled) {
+      const groupMessageIdValue = id.slice(GROUP_MESSAGE_PREFIX.length);
+      const groupMessage = await prisma.groupChatMessage.findFirst({
+        where: {
+          id: groupMessageIdValue,
+          groupChat: { members: { some: { userId: user.id } } },
+        },
+        include: {
+          sender: { select: { phoneNumber: true, name: true } },
+          attachments: { select: { id: true, filename: true, size: true } },
+        },
+      });
+      if (!groupMessage) return res.status(404).json({ message: 'Group message not found.' });
+      if (action === 'spam' || action === 'trash' || action === 'restore') {
+        return res.status(400).json({ message: 'This action is not available for group messages.' });
+      }
+      if (action === 'delete') {
+        await prisma.groupChatMessageDeletion.upsert({
+          where: { messageId_userId: { messageId: groupMessage.id, userId: user.id } },
+          create: { messageId: groupMessage.id, userId: user.id },
+          update: { deletedAt: new Date() },
+        });
+        return res.json({ message: groupMessageView(groupMessage, user.phoneNumber) });
+      }
+      if (action === 'star') {
+        const updated = await prisma.groupChatMessage.update({
+          where: { id: groupMessage.id },
+          data: { isStarred: !groupMessage.isStarred },
+          include: {
+            sender: { select: { phoneNumber: true, name: true } },
+            attachments: { select: { id: true, filename: true, size: true } },
+          },
+        });
+        return res.json({ message: groupMessageView(updated, user.phoneNumber) });
+      }
+      await prisma.groupChatMember.updateMany({
+        where: { groupChatId: groupMessage.groupChatId, userId: user.id },
+        data: { lastReadAt: new Date() },
+      });
+      return res.json({ message: groupMessageView(groupMessage, user.phoneNumber) });
+    }
     const mailbox = action === 'spam' ? 'spam'
       : action === 'trash' ? 'trash'
       : action === 'restore' ? 'inbox'
@@ -599,8 +948,50 @@ router.patch('/messages/:id', async (req, res, next) => {
 });
 
 router.patch('/conversations/:id', async (req, res, next) => {
-  const userPhone = res.locals.authenticatedUser.phoneNumber;
-  const userId = res.locals.authenticatedUser.id;
+  const user = res.locals.authenticatedUser;
+  const userPhone = user.phoneNumber;
+  const userId = user.id;
+  if (req.params.id.startsWith(GROUP_CONVERSATION_PREFIX) && !memoryStoreEnabled) {
+    const groupId = req.params.id.slice(GROUP_CONVERSATION_PREFIX.length);
+    try {
+      const membership = await prisma.groupChatMember.findFirst({
+        where: { groupChatId: groupId, userId },
+      });
+      if (!membership) return res.status(404).json({ message: 'Group conversation not found.' });
+      const group = await prisma.groupChat.findUnique({ where: { id: groupId } });
+      if (!group) return res.status(404).json({ message: 'Group conversation not found.' });
+      if (req.body?.participants !== undefined) {
+        return res.status(400).json({ message: 'Group participants cannot be changed.' });
+      }
+      const updates: { name?: string; description?: string; avatarUrl?: string } = {};
+      if (req.body?.title !== undefined) {
+        if (typeof req.body.title !== 'string') return res.status(400).json({ message: 'Group name must be text.' });
+        updates.name = req.body.title.trim().slice(0, 100);
+      }
+      if (req.body?.description !== undefined) {
+        if (typeof req.body.description !== 'string') return res.status(400).json({ message: 'Group description must be text.' });
+        updates.description = req.body.description.trim().slice(0, 500);
+      }
+      if (req.body?.avatarUrl !== undefined) {
+        if (typeof req.body.avatarUrl !== 'string' ||
+          (req.body.avatarUrl !== '' && !/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(req.body.avatarUrl)) ||
+          Buffer.byteLength(req.body.avatarUrl, 'utf8') > 2_800_000) {
+          return res.status(400).json({ message: 'Group photo must be a PNG, JPEG, WebP, or GIF image up to 2 MB.' });
+        }
+        updates.avatarUrl = req.body.avatarUrl;
+      }
+      await prisma.groupChat.update({ where: { id: groupId }, data: updates });
+      if (typeof req.body?.isFavourite === 'boolean') {
+        await prisma.groupChatMember.update({
+          where: { id: membership.id },
+          data: { isFavourite: req.body.isFavourite },
+        });
+      }
+      return res.json({ conversation: { id: req.params.id, ...req.body } });
+    } catch (error) {
+      return next(error);
+    }
+  }
   const peer = participantKey(req.params.id.replace(/^conversation-/, ''));
   const belongsToUser = messages.some((message) =>
     (message.from === userPhone && message.to.includes(peer)) ||

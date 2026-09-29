@@ -20,6 +20,7 @@ import { useLanguage } from '../context/LanguageProvider';
 import type { TranslationKey } from '../utils/i18n';
 import type { LucideIcon } from 'lucide-react';
 import { ComposeModal } from '../components/mail/ComposeModal';
+import type { Message } from '../types';
 
 interface NavItem {
   to: string;
@@ -113,6 +114,11 @@ export default function MainLayout() {
       delete next.compose;
       return next;
     });
+  const handleComposeSent = (message: Message) => {
+    setParams(message.isGroup && message.conversationId
+      ? { chat: message.conversationId }
+      : {});
+  };
 
   const outletContext: LayoutContext = { search, setSearch };
 
@@ -404,7 +410,7 @@ export default function MainLayout() {
           lockedTo={composeMode !== '1' && !composeMode.startsWith('draft:') ? composeMode : undefined}
           draftId={composeMode.startsWith('draft:') ? composeMode.slice('draft:'.length) : undefined}
           onClose={closeCompose}
-          onSent={closeCompose}
+          onSent={handleComposeSent}
         />
       )}
 

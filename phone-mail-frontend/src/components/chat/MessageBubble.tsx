@@ -94,6 +94,9 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
           isLong && 'cursor-pointer',
         )}
       >
+        {message.isGroup && !isOut && message.senderName && (
+          <p className="mb-1 text-xs font-semibold text-[#1a66ff]">{message.senderName}</p>
+        )}
         {/* new-email subject header */}
         {message.subject && !message.isReply && (
           <p
@@ -197,17 +200,21 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
                   <CheckCheck className="size-3.5" /> {t('markAsRead')}
                 </button>
               )}
-              {message.mailbox !== 'inbox' && message.mailbox !== 'sent' && (
+              {!message.isGroup && message.mailbox !== 'inbox' && message.mailbox !== 'sent' && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'restore'); }}>
                   <Flag className="size-3.5" /> {t('moveToInbox')}
                 </button>
               )}
-              {message.mailbox !== 'spam' && message.mailbox !== 'trash' && (
+              {!message.isGroup && message.mailbox !== 'spam' && message.mailbox !== 'trash' && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'spam'); }}>
                   <Flag className="size-3.5" /> {t('moveToSpam')}
                 </button>
               )}
-              {message.mailbox !== 'trash' ? (
+              {message.isGroup ? (
+                <button className="menu-action text-rose-600" onClick={() => { setMenuOpen(false); onAction(message, 'delete'); }}>
+                  <Trash2 className="size-3.5" /> {t('deleteForMe')}
+                </button>
+              ) : message.mailbox !== 'trash' ? (
                 <button className="menu-action text-rose-600" onClick={() => { setMenuOpen(false); onAction(message, 'trash'); }}>
                   <Trash2 className="size-3.5" /> {t('moveToTrash')}
                 </button>

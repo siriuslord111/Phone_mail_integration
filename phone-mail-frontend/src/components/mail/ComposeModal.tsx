@@ -3,6 +3,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { Button } from '../common/Buttons';
 import { deleteDraft, listDrafts, saveDraft, sendMessage } from '../../api/email.api';
 import type { MailDraft } from '../../api/email.api';
+import type { Message } from '../../types';
 import { digitsOnly, normalizePhone } from '../../utils/formatters';
 import { getErrorMessage } from '../../api/axios';
 import { useLanguage } from '../../context/LanguageProvider';
@@ -21,7 +22,7 @@ interface ComposeModalProps {
   lockedTo?: string;
   draftId?: string;
   onClose: () => void;
-  onSent: () => void;
+  onSent: (message: Message) => void;
 }
 
 export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModalProps) {
@@ -131,9 +132,9 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
     setSending(true);
     setError('');
     try {
-      await sendMessage({ to, subject: subject || undefined, body: body.trim() });
+      const message = await sendMessage({ to, subject: subject || undefined, body: body.trim() });
       if (activeDraftId) await deleteDraft(activeDraftId);
-      onSent();
+      onSent(message);
     } catch (sendError) {
       setError(getErrorMessage(sendError, t('couldNotSend')));
     } finally {

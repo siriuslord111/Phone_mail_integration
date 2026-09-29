@@ -94,7 +94,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [filter, search, pathname, composeMode, folder]);
+  }, [filter, search, pathname, composeMode, folder, chatId]);
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === chatId) ?? null,
@@ -339,6 +339,7 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
     try {
       const msg = await sendMessage({
         to: conversation.participants.map((p) => p.phone),
+        conversationId: conversation.isGroup ? conversation.id : undefined,
         subject: !replyTarget && subject ? subject : undefined,
         body,
         inReplyTo: replyTarget?.id,

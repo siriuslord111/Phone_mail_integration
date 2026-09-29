@@ -1,8 +1,8 @@
-import { ArrowLeft, Camera, Download, FileText, Image, Link2, PlaySquare, UserMinus, UserPlus, X } from 'lucide-react';
+import { ArrowLeft, Camera, Download, FileText, Image, Link2, PlaySquare, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { getErrorMessage } from '../../api/axios';
 import { downloadAttachment } from '../../api/email.api';
-import type { Attachment, Conversation, Message, Participant } from '../../types';
+import type { Attachment, Conversation, Message } from '../../types';
 import { getInitials, avatarColor } from '../../utils/formatters';
 import { useLanguage } from '../../context/LanguageProvider';
 
@@ -10,7 +10,7 @@ interface ConversationProfilePanelProps {
   conversation: Conversation;
   messages: Message[];
   onClose: () => void;
-  onSave: (patch: Pick<Conversation, 'title' | 'avatarUrl' | 'description' | 'participants'>) => Promise<void>;
+  onSave: (patch: Pick<Conversation, 'title' | 'avatarUrl' | 'description'>) => Promise<void>;
   onSaveNickname: (nickname: string) => Promise<void>;
 }
 
@@ -27,15 +27,12 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   const [description, setDescription] = useState(conversation.description ?? conversation.participants[0]?.bio ?? '');
   const [avatarUrl, setAvatarUrl] = useState(conversation.avatarUrl ?? conversation.participants[0]?.avatarUrl ?? '');
   const [photoOpen, setPhotoOpen] = useState(false);
-  const [participants, setParticipants] = useState<Participant[]>(conversation.participants);
-  const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
   const [nicknameSaving, setNicknameSaving] = useState(false);
   const [nicknameSaved, setNicknameSaved] = useState(false);
   const [nicknameError, setNicknameError] = useState('');
   const [sharedCategory, setSharedCategory] = useState<SharedCategory | null>(null);
   const [attachmentError, setAttachmentError] = useState('');
-  const isAdmin = conversation.isGroup;
   const sharedItems = useMemo(() => {
     const photos: Attachment[] = [];
     const files: Attachment[] = [];
@@ -72,7 +69,7 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   const save = async () => {
     setSaving(true);
     try {
-      await onSave({ title: title.trim() || conversation.title, description: description.trim(), avatarUrl, participants });
+      await onSave({ title: title.trim() || conversation.title, description: description.trim(), avatarUrl });
       onClose();
     } finally {
       setSaving(false);
@@ -91,13 +88,6 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
     } finally {
       setNicknameSaving(false);
     }
-  };
-
-  const addMember = () => {
-    const normalized = phone.replace(/\D/g, '');
-    if (normalized.length !== 10 || participants.some((item) => item.phone === normalized)) return;
-    setParticipants((current) => [...current, { phone: normalized, name: normalized }]);
-    setPhone('');
   };
 
   return (
@@ -123,7 +113,7 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
           style={{ backgroundColor: avatarColor(conversation.title), backgroundImage: avatarUrl ? `url("${avatarUrl}")` : undefined }}
         >
           {!avatarUrl && getInitials(conversation.actualName || conversation.title)}
-          {isAdmin && (
+          {conversation.isGroup && (
             <label aria-label={t('changeProfilePicture')} onClick={(event) => event.stopPropagation()} className="absolute bottom-0 right-0 grid size-8 cursor-pointer place-items-center rounded-full bg-[#1a66ff] text-white">
               <Camera className="size-4" />
               <input
@@ -141,7 +131,7 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
             </label>
           )}
         </div>
-        {isAdmin ? (
+        {conversation.isGroup ? (
           <div className="mx-auto mt-4 max-w-sm space-y-2 text-left">
             <input value={title} onChange={(event) => setTitle(event.target.value)} className="w-full rounded-xl bg-slate-50 px-3 py-2 text-center font-semibold outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" aria-label={t('groupName')} />
             <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t('groupDescriptionPlaceholder')} className="w-full rounded-xl bg-slate-50 px-3 py-2 text-center text-sm outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" aria-label={t('description')} />
@@ -181,19 +171,13 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
       {conversation.isGroup && (
         <section className="mt-2 bg-white p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800">{participants.length} {t('groupParticipants')}</h3>
-            <span className="text-xs text-emerald-600">{t('youAreAdmin')}</span>
-          </div>
-          <div className="mb-3 flex gap-2">
-            <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder={t('phoneNumberPlaceholder')} className="min-w-0 flex-1 rounded-xl bg-slate-50 px-3 py-2 text-sm outline-none ring-1 ring-slate-200" />
-            <button onClick={addMember} className="grid size-10 place-items-center rounded-xl bg-blue-50 text-[#1a66ff]" aria-label={t('addMember')}><UserPlus className="size-4" /></button>
+            <h3 className="font-semibold text-slate-800">{conversation.participants.length} {t('groupParticipants')}</h3>
           </div>
           <div className="space-y-2">
-            {participants.map((member) => (
+            {conversation.participants.map((member) => (
               <div key={member.phone} className="flex items-center gap-3 rounded-xl px-2 py-2">
                 <span className="grid size-9 place-items-center rounded-full bg-blue-100 text-xs font-semibold text-[#1a66ff]">{getInitials(member.name)}</span>
                 <span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-700">{member.name}</strong><small className="text-xs text-slate-400">{member.phone}</small></span>
-                {member.phone !== '9876543210' && <button onClick={() => setParticipants((current) => current.filter((item) => item.phone !== member.phone))} aria-label={`${t('removeMember')} ${member.name}`} className="text-slate-400 hover:text-rose-500"><UserMinus className="size-4" /></button>}
               </div>
             ))}
           </div>
@@ -248,7 +232,7 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
         )}
       </section>
 
-      {isAdmin && <button disabled={saving} onClick={save} className="m-4 rounded-xl bg-[#1a66ff] py-3 font-semibold text-white disabled:opacity-60">{saving ? t('saving') : t('saveGroupChanges')}</button>}
+      {conversation.isGroup && <button disabled={saving} onClick={save} className="m-4 rounded-xl bg-[#1a66ff] py-3 font-semibold text-white disabled:opacity-60">{saving ? t('saving') : t('saveGroupChanges')}</button>}
       <button onClick={onClose} aria-label={t('closeProfile')} className="absolute right-3 top-3 grid size-8 place-items-center rounded-full text-slate-400 hover:bg-slate-100"><X className="size-4" /></button>
       {photoOpen && avatarUrl && (
         <div
