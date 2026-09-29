@@ -16,7 +16,7 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   const { user, initializing } = useAuth();
   if (initializing) {
     return (
-      <div className="grid h-dvh place-items-center bg-[#eaf1fb]">
+      <div className="grid h-dvh place-items-center bg-[var(--app-background)]">
         <LoadingSpinner size="lg" className="text-[#1a66ff]" />
       </div>
     );

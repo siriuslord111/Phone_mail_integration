@@ -27,6 +27,8 @@ export type Message = {
   read: boolean;
   mailbox?: 'inbox' | 'sent' | 'spam' | 'trash';
   isStarred?: boolean;
+  replyToId?: string;
+  quotedText?: string;
   attachments?: Array<{ id: string; name: string; size: number }>;
 };
 

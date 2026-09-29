@@ -159,9 +159,11 @@ export default function MainLayout() {
             <button
               onClick={() => setDrawerOpen(true)}
               aria-label={t('account')}
-              className="grid size-10 place-items-center rounded-full bg-[#0b3fbf] text-sm font-semibold ring-2 ring-white/70 transition active:scale-90"
+              className="grid size-10 place-items-center overflow-hidden rounded-full bg-[#0b3fbf] text-sm font-semibold ring-2 ring-white/70 transition active:scale-90"
             >
-              {accountInitials}
+              {user?.avatarUrl
+                ? <img src={user.avatarUrl} alt="" className="size-full object-cover" />
+                : accountInitials}
             </button>
           </div>
 
@@ -182,7 +184,7 @@ export default function MainLayout() {
 
       {/* ── Desktop header (Gmail-style) ────────────────────────────── */}
       <header className="relative z-20 hidden h-16 shrink-0 items-center gap-4 px-4 md:flex">
-        <div className="flex w-56 items-center gap-2">
+        <div className="flex w-56 shrink-0 items-center gap-2">
           <button
             onClick={() => setSidebarCollapsed((v) => !v)}
             aria-label={t('toggleSidebar')}
@@ -205,7 +207,7 @@ export default function MainLayout() {
         </div>
 
         {searchVisible && (
-          <label className="flex h-12 max-w-2xl flex-1 items-center gap-3 rounded-full bg-slate-100 px-4 text-slate-700 transition-colors focus-within:bg-white focus-within:shadow-md focus-within:ring-1 focus-within:ring-slate-200">
+          <label className="flex h-12 min-w-0 max-w-2xl flex-1 items-center gap-3 rounded-full bg-slate-100 px-4 text-slate-700 transition-colors focus-within:bg-white focus-within:shadow-md focus-within:ring-1 focus-within:ring-slate-200">
             <Search className="size-5 shrink-0 text-slate-400" />
             <input
               type="search"
@@ -217,7 +219,7 @@ export default function MainLayout() {
           </label>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <Link
             to="/settings"
             aria-label={t('settings')}
@@ -230,9 +232,11 @@ export default function MainLayout() {
             <button
               onClick={() => setMenuOpen((v) => !v)}
               aria-label={t('accountMenu')}
-              className="grid size-10 place-items-center rounded-full bg-[#1a66ff] text-sm font-semibold text-white shadow-md shadow-blue-500/30 ring-2 ring-white transition active:scale-90"
+              className="grid size-10 place-items-center overflow-hidden rounded-full bg-[#1a66ff] text-sm font-semibold text-white shadow-md shadow-blue-500/30 ring-2 ring-white transition active:scale-90"
             >
-              {accountInitials}
+              {user?.avatarUrl
+                ? <img src={user.avatarUrl} alt="" className="size-full object-cover" />
+                : accountInitials}
             </button>
             <div
               className={cn(
@@ -248,8 +252,10 @@ export default function MainLayout() {
                 }}
                 className="flex w-full items-center gap-3 bg-gradient-to-br from-[#1a66ff] to-[#0b4fe0] p-4 text-left text-white"
               >
-                <span className="grid size-14 place-items-center rounded-full bg-[#0b3fbf] text-xl font-semibold ring-2 ring-white/60">
-                  {accountInitials}
+                <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[#0b3fbf] text-xl font-semibold ring-2 ring-white/60">
+                  {user?.avatarUrl
+                    ? <img src={user.avatarUrl} alt="" className="size-full object-cover" />
+                    : accountInitials}
                 </span>
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{name}</p>
@@ -355,8 +361,10 @@ export default function MainLayout() {
             >
               <X className="size-5" />
             </button>
-            <span className="relative grid size-14 place-items-center rounded-full bg-[#0b3fbf] text-xl font-semibold ring-2 ring-white/60">
-              {accountInitials}
+            <span className="relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[#0b3fbf] text-xl font-semibold ring-2 ring-white/60">
+              {user?.avatarUrl
+                ? <img src={user.avatarUrl} alt="" className="size-full object-cover" />
+                : accountInitials}
             </span>
             <p className="relative mt-3 truncate text-lg font-semibold">{name}</p>
             <p className="relative truncate text-sm text-blue-100">{email}</p>

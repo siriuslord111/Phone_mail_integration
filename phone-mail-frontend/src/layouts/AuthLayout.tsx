@@ -12,7 +12,7 @@ export default function AuthLayout() {
   const { t } = useLanguage();
 
   return (
-    <div className="flex h-dvh flex-col bg-[#eaf1fb] md:items-center md:justify-center md:bg-gradient-to-br md:from-[#0b3fbf] md:to-[#1a66ff] md:p-6">
+    <div className="flex h-dvh flex-col bg-[var(--app-background)] md:items-center md:justify-center md:bg-gradient-to-br md:from-[#0b3fbf] md:to-[#1a66ff] md:p-6">
       <div className="relative flex w-full flex-1 flex-col overflow-hidden md:h-[46rem] md:max-h-[92vh] md:max-w-[26rem] md:flex-none md:rounded-[2rem] md:shadow-2xl md:shadow-blue-900/40">
         <div className="relative shrink-0 overflow-hidden bg-gradient-to-br from-[#1a66ff] to-[#0b4fe0] px-6 pb-9 pt-[max(env(safe-area-inset-top),2.25rem)] text-white">
           <span className="pointer-events-none absolute -right-12 -top-16 size-52 rounded-full bg-white/10" />

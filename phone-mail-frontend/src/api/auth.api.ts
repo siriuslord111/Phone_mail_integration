@@ -145,3 +145,23 @@ export async function registerWithPassword(phone: string, password: string): Pro
   });
   return { token: data.token, user: data.user, isNewUser: data.isNewUser ?? !data.user?.name };
 }
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  if (newPassword.length < 8 || newPassword.length > 128) {
+    throw new Error('Password must be between 8 and 128 characters.');
+  }
+  if (DEMO_MODE) {
+    await demoDelay();
+    const storedUser = localStorage.getItem(DEMO_USER_KEY);
+    if (!storedUser) throw new Error('Sign in to continue.');
+    const user = JSON.parse(storedUser) as User;
+    const passwordKey = `phonemail_password_${user.phone}`;
+    const storedPassword = localStorage.getItem(passwordKey);
+    if (storedPassword && !await verifyDemoPassword(currentPassword, storedPassword)) {
+      throw new Error('Current password is incorrect.');
+    }
+    localStorage.setItem(passwordKey, await hashDemoPassword(newPassword));
+    return;
+  }
+  await api.post('/auth/change-password', { currentPassword, newPassword });
+}

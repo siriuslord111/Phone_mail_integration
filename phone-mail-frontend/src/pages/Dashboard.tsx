@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Info, Star } from 'lucide-react';
+import { ArrowLeft, Info, Star, UserRoundPen } from 'lucide-react';
 import { MailList } from '../components/mail/MailList';
 import { ExpandedEmailView } from '../components/mail/ExpandedEmailView';
 import { ComposeBar } from '../components/chat/ComposeBar';
@@ -15,13 +15,14 @@ import {
   listDrafts,
   sendMessage,
   saveContactNickname,
+  updateConversationAction,
   toggleFavourite,
   updateConversation,
   updateMessage,
 } from '../api/email.api';
 import { formatDay, getContactInitials, avatarColor, normalizePhone } from '../utils/formatters';
 import type { TranslationKey } from '../utils/i18n';
-import type { Conversation, Folder, MailFilter, Message } from '../types';
+import type { Conversation, ConversationAction, Folder, MailFilter, Message } from '../types';
 import type { MailDraft } from '../api/email.api';
 
 const FOLDER_BY_PATH: Record<string, Folder> = {
@@ -69,6 +70,7 @@ export default function Dashboard() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [drafts, setDrafts] = useState<MailDraft[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  const [conversationActionError, setConversationActionError] = useState('');
   const [conversationListWidth, setConversationListWidth] = useState(readConversationListWidth);
   const splitPaneRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef(false);
@@ -108,6 +110,16 @@ export default function Dashboard() {
     () => listConversations(filter, search, folder).then(setConversations),
     [filter, folder, search],
   );
+  const handleConversationAction = async (conversation: Conversation, action: ConversationAction) => {
+    setConversationActionError('');
+    try {
+      await updateConversationAction(conversation.id, action);
+      await refreshList();
+      if ((action === 'delete' || action === 'spam') && chatId === conversation.id) closeChat();
+    } catch {
+      setConversationActionError(t('couldNotUpdateConversation'));
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem(CONVERSATION_LIST_WIDTH_KEY, String(conversationListWidth));
@@ -165,6 +177,10 @@ export default function Dashboard() {
             onFilterChange={setFilter}
             activeId={chatId ?? undefined}
             onOpen={openChat}
+            onConversationAction={(conversation, action) => { void handleConversationAction(conversation, action); }}
+            canMoveToSpam={folder !== 'spam' && folder !== 'trash'}
+            canDeleteConversation={folder !== 'trash'}
+            actionError={conversationActionError}
             search={search}
             compact={compact}
           />
@@ -219,6 +235,7 @@ export default function Dashboard() {
           <ChatPanel
             key={activeConversation.id}
             conversation={activeConversation}
+            folder={folder}
             onBack={closeChat}
             onFavouriteToggle={async (next) => {
               await toggleFavourite(activeConversation.id, next);
@@ -289,6 +306,7 @@ function EmptyPane() {
 
 interface ChatPanelProps {
   conversation: Conversation;
+  folder: Folder;
   onBack: () => void;
   onFavouriteToggle: (next: boolean) => void;
   onComposeTraditional: (lockedPhone: string) => void;
@@ -296,7 +314,7 @@ interface ChatPanelProps {
   onSaveNickname: (phone: string, nickname: string) => Promise<void>;
 }
 
-function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTraditional, onRead, onSaveNickname }: ChatPanelProps) {
+function ChatPanel({ conversation, folder, onBack, onFavouriteToggle, onComposeTraditional, onRead, onSaveNickname }: ChatPanelProps) {
   const { t } = useLanguage();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -343,9 +361,15 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
         subject: !replyTarget && subject ? subject : undefined,
         body,
         inReplyTo: replyTarget?.id,
+        quotedText: replyTarget?.body,
         attachments: files.length ? files : undefined,
       });
-      setMessages((prev) => prev.map((m) => (m.id === replyTarget?.id ? { ...m, replied: true } : m)).concat(msg));
+      setMessages((prev) => prev.map((m) => (m.id === replyTarget?.id ? { ...m, replied: true } : m)).concat({
+        ...msg,
+        isReply: Boolean(replyTarget),
+        inReplyToId: replyTarget?.id,
+        quotedText: replyTarget?.body,
+      }));
       setReplyTarget(null);
     } finally {
       setSending(false);
@@ -406,15 +430,30 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
           {!conversation.avatarUrl && getContactInitials(conversation.title, singlePhone)}
         </button>
 
-        <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={() => setShowConversationProfile(true)}
+          aria-label={t('viewContactProfile')}
+          className="min-w-0 flex-1 text-left"
+        >
           <p className="truncate text-[15px] font-semibold text-slate-900">{conversation.title}</p>
           <p className="truncate text-xs text-slate-400">
             {conversation.isGroup
               ? `${conversation.participants.length} ${t('groupParticipants')}`
               : singlePhone && `${normalizePhone(singlePhone)}@phonemail.com`}
           </p>
-        </div>
+        </button>
 
+        <button
+          type="button"
+          onClick={() => setShowConversationProfile(true)}
+          aria-label={t('viewContactProfile')}
+          title={conversation.isGroup ? t('groupInfo') : t('contactInfo')}
+          className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 text-slate-500 transition hover:bg-slate-100 md:px-3"
+        >
+          <UserRoundPen className="size-[18px]" />
+          <span className="hidden text-xs font-medium lg:inline">{conversation.isGroup ? t('groupInfo') : t('contactInfo')}</span>
+        </button>
         <button
           onClick={() => onFavouriteToggle(!conversation.isFavourite)}
           aria-label={conversation.isFavourite ? t('removeFromFavourites') : t('addToFavourites')}
@@ -445,8 +484,9 @@ function ChatPanel({ conversation, onBack, onFavouriteToggle, onComposeTradition
                     onSwipeReply={(target) => setReplyTarget(target)}
                     onOpenFull={setOpenedMessage}
                     onAction={async (target, action) => {
+                      if (action === 'delete' && target.mailbox === 'trash' && !window.confirm(t('deletePermanentlyConfirm'))) return;
                       const updated = await updateMessage(target.id, action);
-                      if (action === 'spam' || action === 'trash' || action === 'delete') {
+                      if (action === 'spam' || action === 'trash' || action === 'delete' || (folder === 'trash' && action === 'restore')) {
                         setMessages((prev) => prev.filter((item) => item.id !== target.id));
                       } else {
                         setMessages((prev) => prev.map((item) => item.id === updated.id ? { ...item, ...updated } : item));

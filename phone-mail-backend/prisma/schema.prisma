@@ -98,6 +98,8 @@ model MailMessage {
   mailbox     String           @default("inbox")
   isRead      Boolean          @default(false)
   isStarred   Boolean          @default(false)
+  replyToId   String?
+  quotedText  String?
   createdAt   DateTime         @default(now())
   attachments MailAttachment[]
 
@@ -119,15 +121,29 @@ model MailAttachment {
 }
 
 model MailDraft {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recipients String[]
-  subject    String   @default("")
-  body       String   @default("")
-  updatedAt  DateTime @updatedAt
+  id          String                 @id @default(uuid())
+  userId      String
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipients  String[]
+  subject     String                 @default("")
+  body        String                 @default("")
+  updatedAt   DateTime               @updatedAt
+  attachments MailDraftAttachment[]
 
   @@index([userId, updatedAt])
+}
+
+model MailDraftAttachment {
+  id        String   @id @default(uuid())
+  draftId   String
+  draft     MailDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  filename  String
+  mimeType  String
+  size      Int
+  content   Bytes
+  createdAt DateTime @default(now())
+
+  @@index([draftId])
 }
 
 model GroupChat {

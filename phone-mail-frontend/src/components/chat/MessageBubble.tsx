@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type TouchEvent } from 'react';
-import { CheckCheck, Copy, Download, EllipsisVertical, Flag, Paperclip, Reply, Star, Trash2 } from 'lucide-react';
+import { Copy, EllipsisVertical, Flag, MailOpen, Paperclip, Reply, Star, Trash2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatBytes, formatClock } from '../../utils/formatters';
-import { downloadAttachment } from '../../api/email.api';
-import { getErrorMessage } from '../../api/axios';
+import { SharedFileActions } from '../common/SharedFileActions';
 import type { Message } from '../../types';
 import { useLanguage } from '../../context/LanguageProvider';
 
@@ -24,11 +23,11 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
   const [dragX, setDragX] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [attachmentError, setAttachmentError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const isOut = message.direction === 'out';
   const canSwipe = Boolean(onSwipeReply) && !message.replied;
   const isLong = message.body.length > LONG_MESSAGE_CHARS;
+  const canOpenFull = Boolean(onOpenFull) && (isLong || Boolean(message.mailbox));
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -82,30 +81,36 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
       )}
 
       <div
-        role={isLong ? 'button' : undefined}
-        tabIndex={isLong ? 0 : undefined}
-        onClick={() => isLong && onOpenFull?.(message)}
+        role={canOpenFull ? 'button' : undefined}
+        tabIndex={canOpenFull ? 0 : undefined}
+        onClick={() => canOpenFull && onOpenFull?.(message)}
+        onKeyDown={(event) => {
+          if (canOpenFull && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            onOpenFull?.(message);
+          }
+        }}
         style={{ transform: dragX ? `translateX(${dragX}px)` : undefined }}
         className={cn(
           'max-w-[82%] rounded-2xl px-3.5 py-2.5 shadow-sm transition-transform duration-100 sm:max-w-[70%]',
           isOut
             ? 'rounded-tr-md bg-gradient-to-br from-[#2a72ff] to-[#1a5ff0] text-white'
             : 'rounded-tl-md bg-white text-slate-800 ring-1 ring-slate-100',
-          isLong && 'cursor-pointer',
+          canOpenFull && 'cursor-pointer',
         )}
       >
         {message.isGroup && !isOut && message.senderName && (
           <p className="mb-1 text-xs font-semibold text-[#1a66ff]">{message.senderName}</p>
         )}
         {/* new-email subject header */}
-        {message.subject && !message.isReply && (
+        {(message.subject || message.mailbox) && !message.isReply && (
           <p
             className={cn(
               'mb-1 text-[11px] font-semibold uppercase tracking-wide',
               isOut ? 'text-blue-100' : 'text-[#1a66ff]',
             )}
           >
-            {message.subject}
+            {message.subject?.trim() || t('noSubject')}
           </p>
         )}
 
@@ -117,6 +122,9 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
               isOut ? 'border-white/50 bg-white/10 text-blue-50' : 'border-[#1a66ff]/40 bg-blue-50 text-slate-500',
             )}
           >
+            <p className={cn('mb-0.5 text-[10px] font-semibold uppercase', isOut ? 'text-blue-100' : 'text-[#1a66ff]')}>
+              {t('inReplyTo')}
+            </p>
             <p className="truncate">{message.quotedText}</p>
           </div>
         )}
@@ -127,7 +135,7 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
 
         {isLong && (
           <span className={cn('mt-1 inline-block text-xs font-medium underline underline-offset-2', isOut ? 'text-blue-100' : 'text-[#1a66ff]')}>
-            {t('openFullEmail')}
+            {t('readMore')}
           </span>
         )}
 
@@ -144,31 +152,14 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
                 <Paperclip className="size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{att.name}</span>
                 <span className="shrink-0 opacity-70">{formatBytes(att.size)}</span>
-                {att.url && (
-                  <button
-                    type="button"
-                    aria-label={`${t('downloadAttachment')} ${att.name}`}
-                    className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-black/10"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setAttachmentError('');
-                      void downloadAttachment(att.id, att.name).catch((error: unknown) => {
-                        setAttachmentError(getErrorMessage(error, t('couldNotDownloadAttachment')));
-                      });
-                    }}
-                  >
-                    <Download className="size-3.5" />
-                  </button>
-                )}
+                <SharedFileActions attachment={att} />
               </div>
             ))}
           </div>
         )}
-        {attachmentError && <p role="alert" className="mt-1 text-xs text-rose-200">{attachmentError}</p>}
 
         <div className={cn('mt-1 flex items-center justify-end gap-1 text-[11px]', isOut ? 'text-blue-100/90' : 'text-slate-400')}>
           <span>{formatClock(message.createdAt)}</span>
-          {isOut && <CheckCheck className={cn('size-3.5', message.status === 'read' && 'text-sky-200')} />}
           {message.isStarred && <Star className="size-3 fill-amber-400 text-amber-400" />}
         </div>
       </div>
@@ -189,20 +180,20 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
                   <Reply className="size-3.5" /> {t('reply')}
                 </button>
               )}
+              {!message.isGroup && onOpenFull && (
+                <button className="menu-action" onClick={() => { setMenuOpen(false); onOpenFull(message); }}>
+                  <MailOpen className="size-3.5" /> {t('openFullEmail')}
+                </button>
+              )}
               <button className="menu-action" onClick={() => { setMenuOpen(false); navigator.clipboard?.writeText(message.body); }}>
                 <Copy className="size-3.5" /> {t('copy')}
               </button>
               <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'star'); }}>
                 <Star className="size-3.5" /> {message.isStarred ? t('unstar') : t('star')}
               </button>
-              {message.direction === 'in' && !message.read && (
-                <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'markRead'); }}>
-                  <CheckCheck className="size-3.5" /> {t('markAsRead')}
-                </button>
-              )}
               {!message.isGroup && message.mailbox !== 'inbox' && message.mailbox !== 'sent' && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onAction(message, 'restore'); }}>
-                  <Flag className="size-3.5" /> {t('moveToInbox')}
+                  <Flag className="size-3.5" /> {message.mailbox === 'trash' ? t('restoreFromTrash') : t('moveToInbox')}
                 </button>
               )}
               {!message.isGroup && message.mailbox !== 'spam' && message.mailbox !== 'trash' && (

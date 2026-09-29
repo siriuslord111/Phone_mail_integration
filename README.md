@@ -85,7 +85,16 @@ Twilio may require toll-free verification or account approval before calls or
 messages work; trial-account geographic and recipient restrictions also apply.
 Confirm that your toll-free number can receive calls from the countries where
 your users are located. OTP delivery remains subject to the 2Factor account,
-approved template, and destination-country support.
+approved template, and destination-country support. If Twilio reports
+**insufficient balance**, this is an account billing restriction, not an `.env`
+or webhook setting: add funds or upgrade the Twilio account in the Twilio
+Console, then retry. Check **Monitor → Voice → Call Logs** for the failed call
+and its error code. This app's IVR receives calls; it does not place outbound
+voice calls.
+Twilio trial accounts may restrict which numbers they can call or receive calls
+from; confirm the Twilio number is voice-enabled and check call logs if the
+webhook is not reached. A toll-free number is required for the verified call
+registration flow documented above.
 
 ### Simulate the IVR locally without a phone number
 

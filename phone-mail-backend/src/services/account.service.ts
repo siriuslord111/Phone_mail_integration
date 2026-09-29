@@ -106,3 +106,13 @@ export async function updateAccount(
   });
   Object.assign(user, changes);
 }
+
+export async function updateAccountPassword(user: User, passwordHash: string): Promise<void> {
+  if (memoryStoreEnabled) {
+    user.passwordHash = passwordHash;
+    return;
+  }
+
+  await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+  user.passwordHash = passwordHash;
+}

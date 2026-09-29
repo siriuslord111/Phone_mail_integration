@@ -23,16 +23,23 @@ body {
 }
 
 .dark {
-  --app-background: #0f172a;
-  --app-background-desktop: #111c30;
+  color-scheme: dark;
+  --app-background: #111827;
+  --app-background-desktop: #0b1220;
+  --dark-surface: #182235;
+  --dark-surface-raised: #1d2a3e;
+  --dark-surface-muted: #253349;
+  --dark-border: #344359;
+  --dark-text: #edf2f8;
+  --dark-text-muted: #b3c0d0;
 }
 
 .dark body {
-  color: #e2e8f0;
+  color: var(--dark-text);
 }
 
 .dark [class~="bg-white"] {
-  background-color: #1e293b;
+  background-color: var(--dark-surface);
 }
 
 .dark [class~="md:bg-white"] {
@@ -41,7 +48,7 @@ body {
 
 .dark [class~="bg-white/95"],
 .dark [class~="bg-white/80"] {
-  background-color: #1e293b;
+  background-color: rgb(24 34 53 / 0.96);
 }
 
 .dark [class~="bg-white/10"] {
@@ -49,23 +56,33 @@ body {
 }
 
 .dark [class~="bg-slate-50"] {
-  background-color: #172235;
+  background-color: #141f30;
 }
 
 .dark [class~="bg-slate-100"] {
-  background-color: #263449;
+  background-color: var(--dark-surface-raised);
 }
 
 .dark [class~="bg-slate-200"] {
-  background-color: #334155;
+  background-color: var(--dark-surface-muted);
 }
 
 .dark [class~="bg-slate-300"] {
-  background-color: #475569;
+  background-color: #40516a;
 }
 
 .dark [class~="bg-blue-50"] {
-  background-color: #172d4b;
+  background-color: #192b43;
+}
+
+.dark [class~="bg-blue-100"],
+.dark [class~="bg-sky-50"] {
+  background-color: #203752;
+}
+
+.dark [class~="bg-amber-50"],
+.dark [class~="bg-yellow-50"] {
+  background-color: #3b321d;
 }
 
 .dark .sidebar-active-link {
@@ -76,30 +93,112 @@ body {
 .dark [class~="text-slate-900"],
 .dark [class~="text-slate-800"],
 .dark [class~="text-slate-700"] {
-  color: #e2e8f0;
+  color: var(--dark-text);
 }
 
 .dark [class~="text-slate-600"],
 .dark [class~="text-slate-500"] {
-  color: #cbd5e1;
+  color: var(--dark-text-muted);
 }
 
 .dark [class~="text-slate-400"] {
-  color: #94a3b8;
+  color: #8fa0b5;
+}
+
+.dark [class~="text-slate-300"] {
+  color: #9aabc0;
+}
+
+.dark [class~="text-[#1a66ff]"],
+.dark [class~="text-blue-600"],
+.dark [class~="text-blue-700"] {
+  color: #8db7ff;
+}
+
+.dark [class~="text-blue-800"] {
+  color: #bfdbfe;
+}
+
+.dark [class~="text-rose-600"],
+.dark [class~="text-red-600"] {
+  color: #fda4af;
+}
+
+.dark [class~="text-emerald-600"] {
+  color: #6ee7b7;
 }
 
 .dark [class~="border-slate-100"],
 .dark [class~="border-slate-200"] {
-  border-color: #334155;
+  border-color: var(--dark-border);
+}
+
+.dark [class~="ring-slate-100"],
+.dark [class~="ring-slate-200"],
+.dark [class~="ring-slate-200/70"] {
+  --tw-ring-color: var(--dark-border);
 }
 
 .dark [class~="divide-slate-100"] > :not([hidden]) ~ :not([hidden]) {
-  border-color: #334155;
+  border-color: var(--dark-border);
 }
 
 .dark [class~="hover:bg-slate-50"]:hover,
 .dark [class~="hover:bg-slate-100"]:hover {
-  background-color: #334155;
+  background-color: #2a3a51;
+}
+
+.dark [class~="hover:bg-slate-200"]:hover,
+.dark [class~="hover:bg-slate-200/60"]:hover,
+.dark [class~="hover:bg-slate-200/70"]:hover,
+.dark [class~="active:bg-slate-100"]:active {
+  background-color: #34465f;
+}
+
+.dark [class~="focus-within:bg-white"]:focus-within {
+  background-color: var(--dark-surface-raised);
+}
+
+.dark [class~="bg-[#d9e7ff]"] {
+  background-color: #243b5a;
+}
+
+.dark [class~="text-[#0b4fe0]"] {
+  color: #a9c9ff;
+}
+
+.dark [class~="bg-emerald-50"] {
+  background-color: #143528;
+}
+
+.dark [class~="bg-rose-50"],
+.dark [class~="bg-red-50"] {
+  background-color: #3a2028;
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.dark textarea,
+.dark select {
+  color: var(--dark-text);
+  border-color: var(--dark-border);
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #8999ad;
+  opacity: 1;
+}
+
+.dark .menu-action:hover {
+  background: var(--dark-surface-muted);
+}
+
+.dark .skeleton {
+  background: #263449;
+}
+
+.dark .skeleton::after {
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
 }
 
 .dark [class~="hover:bg-blue-100"]:hover,
@@ -108,8 +207,8 @@ body {
 }
 
 .dark .chat-wallpaper {
-  background-color: #172235;
-  background-image: radial-gradient(rgba(148, 163, 184, 0.12) 1.2px, transparent 1.2px);
+  background-color: #111c2c;
+  background-image: radial-gradient(rgb(148 163 184 / 0.07) 1px, transparent 1px);
 }
 
 :focus-visible {

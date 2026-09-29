@@ -1,8 +1,6 @@
 import { Router } from 'express';
 
 import { addMessage, messages, normalizePhone } from '../store';
-import { TwilioService } from '../services/twilio.service';
-import { findAccountByEmail } from '../services/account.service';
 import { normalizeRecipients } from '../services/email-recipient';
 import { requireAuth } from '../middlewares/auth';
 import { CannotSendToSelfError, deliverEmail, UnknownPhoneMailRecipientError } from '../services/email-delivery.service';
@@ -46,11 +44,11 @@ router.post('/send', async (req, res) => {
     });
   }
 
-  if (!sender || typeof body !== 'string' || !body.trim()) {
-    return res.status(400).json({ success: false, message: 'Sender, recipient and body are required.' });
+  if (!sender || typeof body !== 'string') {
+    return res.status(400).json({ success: false, message: 'Sender, recipient and message body are required.' });
   }
 
-  const emailSubject = String(subject ?? 'New message');
+  const emailSubject = String(subject ?? '').trim();
   let delivery;
   try {
     delivery = await deliverEmail({
@@ -73,13 +71,6 @@ router.post('/send', async (req, res) => {
         ? error.message
         : 'The email could not be sent. Check SMTP settings and the recipient address, then try again.',
     });
-  }
-
-  for (const recipient of recipients) {
-    const user = await findAccountByEmail(recipient);
-    if (user && !user.hasMobileApp) {
-      await TwilioService.sendEmailNotificationSMS(user.phoneNumber, sender, emailSubject);
-    }
   }
 
   if (delivery.externalRecipients > 0) {

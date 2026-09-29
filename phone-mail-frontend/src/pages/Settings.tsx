@@ -10,10 +10,12 @@ import {
   SlidersHorizontal,
   UserRound,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { useLanguage } from '../context/LanguageProvider';
+import { changePassword } from '../api/auth.api';
+import { getErrorMessage } from '../api/axios';
 import { isLanguageCode, LANGUAGES, type TranslationKey } from '../utils/i18n';
 import { applyDarkMode } from '../utils/theme';
 
@@ -94,6 +96,38 @@ export default function Settings() {
   const { language, setLanguage, t } = useLanguage();
   const option = OPTIONS.find((item) => item.id === section);
   const [enabled, setEnabled] = useState(true);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordStatus, setPasswordStatus] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  const handlePasswordChange = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError('');
+    setPasswordStatus('');
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      setPasswordError(t('passwordLength'));
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError(t('passwordMismatch'));
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPasswordStatus(t('passwordChanged'));
+    } catch (error) {
+      setPasswordError(getErrorMessage(error, t('passwordChangeFailed')));
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (!section) return;
@@ -141,6 +175,56 @@ export default function Settings() {
             </div>
           </div>
           <p className="mt-5 text-sm leading-6 text-slate-600">{t(option.detail)}</p>
+          {option.id === 'password' && (
+            <form onSubmit={(event) => { void handlePasswordChange(event); }} className="mt-5 space-y-4 border-t border-slate-100 pt-4">
+              <label className="block text-sm font-medium text-slate-700">
+                {t('currentPassword')}
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#1a66ff]"
+                />
+                <span className="mt-1 block text-xs font-normal text-slate-500">{t('currentPasswordHelp')}</span>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                {t('newPassword')}
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={128}
+                  required
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#1a66ff]"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                {t('confirmNewPassword')}
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={128}
+                  required
+                  value={confirmNewPassword}
+                  onChange={(event) => setConfirmNewPassword(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#1a66ff]"
+                />
+              </label>
+              {passwordError && <p role="alert" className="text-sm text-rose-600">{passwordError}</p>}
+              {passwordStatus && <p role="status" className="text-sm text-emerald-700">{passwordStatus}</p>}
+              <button
+                type="submit"
+                disabled={changingPassword}
+                className="inline-flex items-center justify-center rounded-xl bg-[#1a66ff] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b4fe0] disabled:opacity-60"
+              >
+                {changingPassword ? t('saving') : t('changePassword')}
+              </button>
+            </form>
+          )}
           {option.id === 'language' && (
             <label className="mt-5 block border-t border-slate-100 pt-4 text-sm font-medium text-slate-700">
               {t('language')}

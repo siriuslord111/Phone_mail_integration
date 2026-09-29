@@ -3,8 +3,9 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 
 import { env } from '../config/env';
 import { loginRateLimit, otpSendRateLimit } from '../middlewares/login-rate-limit';
+import { requireAuth } from '../middlewares/auth';
 import { normalizePhone, otpStore } from '../store';
-import { AccountAlreadyExistsError, createAccount, findAccountByPhone } from '../services/account.service';
+import { AccountAlreadyExistsError, createAccount, findAccountByPhone, updateAccountPassword } from '../services/account.service';
 import { OtpProviderError, sendOtp } from '../services/otp.service';
 import { hashPassword, verifyPassword } from '../services/password.service';
 import { createSessionToken } from '../services/session.service';
@@ -193,6 +194,28 @@ router.post('/login', loginRateLimit, (req: Request, res: Response, next) => {
 });
 router.post('/login-password', loginRateLimit, (req: Request, res: Response, next) => {
   void passwordLogin(req, res).catch(next);
+});
+
+router.post('/change-password', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+  const newPassword = req.body?.newPassword;
+  if (typeof newPassword !== 'string' || newPassword.length < PASSWORD_MIN_LENGTH || newPassword.length > PASSWORD_MAX_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Password must be between ${PASSWORD_MIN_LENGTH} and ${PASSWORD_MAX_LENGTH} characters.`,
+    });
+  }
+
+  const user = res.locals.authenticatedUser as User;
+  try {
+    if (user.passwordHash && !await verifyPassword(currentPassword, user.passwordHash)) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+    }
+    await updateAccountPassword(user, await hashPassword(newPassword));
+    return res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 async function passwordLogin(req: Request, res: Response) {

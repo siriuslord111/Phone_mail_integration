@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 
-import { addMessage, messages, normalizePhone } from '../store';
+import { messages, normalizePhone } from '../store';
 import { requireAuth } from '../middlewares/auth';
 import { sendOutboundEmail } from '../services/email.service';
 import { normalizeRecipients } from '../services/email-recipient';
@@ -130,12 +130,14 @@ function storedMessage(message: {
   toAddress: string;
   subject: string;
   body: string;
+  replyToId?: string | null;
+  quotedText?: string | null;
   direction: string;
   mailbox: string;
   createdAt: Date;
   isRead: boolean;
   isStarred: boolean;
-  attachments?: Array<{ id: string; filename: string; size: number }>;
+  attachments?: Array<{ id: string; filename: string; size: number; mimeType: string }>;
 }) {
   return {
     id: `local-${message.id}`,
@@ -146,7 +148,9 @@ function storedMessage(message: {
     createdAt: message.createdAt.toISOString(),
     direction: message.direction === 'out' ? 'out' as const : 'in' as const,
     mailbox: message.mailbox,
-    isReply: false,
+    isReply: Boolean(message.replyToId),
+    inReplyToId: message.replyToId ?? undefined,
+    quotedText: message.quotedText ?? undefined,
     read: message.isRead,
     isStarred: message.isStarred,
     status: message.direction === 'out' ? 'sent' as const : undefined,
@@ -155,6 +159,7 @@ function storedMessage(message: {
       id: attachment.id,
       name: attachment.filename,
       size: attachment.size,
+      mimeType: attachment.mimeType,
       url: `/api/attachments/${encodeURIComponent(attachment.id)}`,
     })),
   };
@@ -177,6 +182,42 @@ router.get('/users/me', (req, res) => {
 router.patch('/users/me', (req, res, next) => {
   void updateUserProfile(req, res).catch(next);
 });
+
+router.get('/shared-content', (req, res, next) => {
+  void listSharedContent(req, res).catch(next);
+});
+
+async function listSharedContent(_req: Request, res: Response) {
+  const user = res.locals.authenticatedUser;
+  if (memoryStoreEnabled) return res.json({ attachments: [] });
+
+  const attachments = await prisma.mailAttachment.findMany({
+    where: { mailMessage: { userId: user.id } },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      filename: true,
+      size: true,
+      mimeType: true,
+      createdAt: true,
+      mailMessage: {
+        select: { peerAddress: true, direction: true },
+      },
+    },
+  });
+  return res.json({
+    attachments: attachments.map((attachment) => ({
+      id: attachment.id,
+      name: attachment.filename,
+      size: attachment.size,
+      mimeType: attachment.mimeType,
+      createdAt: attachment.createdAt.toISOString(),
+      conversation: attachment.mailMessage.peerAddress,
+      direction: attachment.mailMessage.direction,
+      url: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+    })),
+  });
+}
 
 router.patch('/contacts/:phone/nickname', (req, res, next) => {
   void updateContactNickname(req, res).catch(next);
@@ -292,7 +333,7 @@ async function listConversations(req: Request, res: Response) {
   const storedEmails = memoryStoreEnabled ? [] : await prisma.mailMessage.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: 'desc' },
-    include: { attachments: { select: { id: true, filename: true, size: true } } },
+    include: { attachments: { select: { id: true, filename: true, size: true, mimeType: true } } },
   });
   for (const email of storedEmails) {
     const list = grouped.get(email.peerAddress) ?? [];
@@ -512,7 +553,7 @@ async function listConversationMessages(req: Request, res: Response) {
   const storedEmails = memoryStoreEnabled ? [] : await prisma.mailMessage.findMany({
     where: { userId: user.id, peerAddress: peer },
     orderBy: { createdAt: 'asc' },
-    include: { attachments: { select: { id: true, filename: true, size: true } } },
+    include: { attachments: { select: { id: true, filename: true, size: true, mimeType: true } } },
   });
   await Promise.all([
     prisma.inboundEmail.updateMany({
@@ -570,10 +611,9 @@ router.post('/messages', (req, res, next) => {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid recipient.' });
     }
   }
-  const subject = String(req.body?.subject ?? 'New message').trim();
+  const subject = String(req.body?.subject ?? '').trim();
   const body = typeof req.body?.body === 'string' ? req.body.body : '';
   const files = Array.isArray(req.files) ? req.files : [];
-  if (!body.trim() && files.length === 0) return res.status(400).json({ message: 'Write a message or attach a file before sending.' });
   if (subject.length > 200 || /[\r\n]/.test(subject)) {
     return res.status(400).json({ message: 'Subject must be 200 characters or fewer and contain no line breaks.' });
   }
@@ -712,22 +752,10 @@ router.post('/messages', (req, res, next) => {
       recipients,
       subject,
       body,
+      replyToId: typeof req.body?.inReplyTo === 'string' ? req.body.inReplyTo : undefined,
+      quotedText: typeof req.body?.quotedText === 'string' ? req.body.quotedText : undefined,
       attachments,
     });
-    if (delivery.externalRecipients > 0) {
-      const externalRecipients = recipients.filter((recipient) => !recipient.endsWith('@phonemail.com'));
-      addMessage({
-        from: sender,
-        to: externalRecipients,
-        subject,
-        body,
-        attachments: files.map((file, index) => ({
-          id: `external-${Date.now()}-${index}`,
-          name: file.originalname,
-          size: file.size,
-        })),
-      });
-    }
     const message = {
       id: `delivery-${Date.now()}`,
       from: sender,
@@ -743,12 +771,15 @@ router.post('/messages', (req, res, next) => {
         ? `conversation-${participantKey(recipients[0])}`
         : undefined,
       isReply: Boolean(req.body?.inReplyTo),
+      inReplyToId: typeof req.body?.inReplyTo === 'string' ? req.body.inReplyTo : undefined,
+      quotedText: typeof req.body?.quotedText === 'string' ? req.body.quotedText : undefined,
       attachments: files.length > 0
         ? (delivery.attachments.length > 0
           ? delivery.attachments.map((attachment) => ({
             id: attachment.id,
             name: attachment.filename,
             size: attachment.size,
+            mimeType: attachment.mimeType,
             url: `/api/attachments/${encodeURIComponent(attachment.id)}`,
           }))
           : files.map((file, index) => ({
@@ -808,31 +839,97 @@ router.get('/drafts', (req, res, next) => {
   void prisma.mailDraft.findMany({
     where: { userId: res.locals.authenticatedUser.id },
     orderBy: { updatedAt: 'desc' },
-  }).then((drafts) => res.json({ drafts })).catch(next);
+    include: { attachments: { select: { id: true, filename: true, mimeType: true, size: true } } },
+  }).then((drafts) => res.json({
+    drafts: drafts.map(({ attachments, ...draft }) => ({
+      ...draft,
+      attachments: attachments.map(({ id, filename, mimeType, size }) => ({ id, name: filename, mimeType, size })),
+    })),
+  })).catch(next);
 });
 
-router.post('/drafts', async (req, res, next) => {
+router.get('/drafts/:id/attachments/:attachmentId', async (req, res, next) => {
+  try {
+    const attachment = await prisma.mailDraftAttachment.findFirst({
+      where: {
+        id: req.params.attachmentId,
+        draftId: req.params.id,
+        draft: { userId: res.locals.authenticatedUser.id },
+      },
+      select: { filename: true, mimeType: true, content: true },
+    });
+    if (!attachment) return res.status(404).json({ message: 'Draft attachment not found.' });
+    res.type(attachment.mimeType || 'application/octet-stream');
+    res.attachment(attachment.filename);
+    return res.send(Buffer.from(attachment.content));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/drafts', parseAttachments, async (req, res, next) => {
   try {
     const { id, recipients, subject, body } = req.body ?? {};
-    if (!Array.isArray(recipients) || !recipients.every((item: unknown) => typeof item === 'string')) {
+    let parsedRecipients = recipients;
+    if (typeof parsedRecipients === 'string') {
+      try {
+        parsedRecipients = JSON.parse(parsedRecipients);
+      } catch {
+        return res.status(400).json({ message: 'Recipients must be a list of addresses.' });
+      }
+    }
+    if (!Array.isArray(parsedRecipients) || !parsedRecipients.every((item: unknown) => typeof item === 'string')) {
       return res.status(400).json({ message: 'Recipients must be a list of addresses.' });
     }
-    const safeRecipients = recipients.map((item: string) => item.trim()).filter(Boolean);
+    const safeRecipients = parsedRecipients.map((item: string) => item.trim()).filter(Boolean);
     const values = {
       recipients: safeRecipients,
       subject: typeof subject === 'string' ? subject.slice(0, 200) : '',
       body: typeof body === 'string' ? body : '',
     };
+    const files = Array.isArray(req.files) ? req.files : [];
     const userId = res.locals.authenticatedUser.id;
-    let draft;
-    if (typeof id === 'string') {
-      const existing = await prisma.mailDraft.findFirst({ where: { id, userId } });
-      if (!existing) return res.status(404).json({ message: 'Draft not found.' });
-      draft = await prisma.mailDraft.update({ where: { id }, data: values });
-    } else {
-      draft = await prisma.mailDraft.create({ data: { ...values, userId } });
-    }
-    return res.status(200).json({ draft });
+    const draftId = await prisma.$transaction(async (transaction) => {
+      let savedDraft;
+      if (typeof id === 'string') {
+        const existing = await transaction.mailDraft.findFirst({ where: { id, userId } });
+        if (!existing) return undefined;
+        savedDraft = await transaction.mailDraft.update({ where: { id }, data: values });
+        await transaction.mailDraftAttachment.deleteMany({ where: { draftId: id } });
+      } else {
+        savedDraft = await transaction.mailDraft.create({ data: { ...values, userId } });
+      }
+      if (files.length) {
+        await transaction.mailDraftAttachment.createMany({
+          data: files.map((file) => ({
+            draftId: savedDraft.id,
+            filename: file.originalname,
+            mimeType: file.mimetype,
+            size: file.size,
+            content: new Uint8Array(file.buffer),
+          })),
+        });
+      }
+      return savedDraft.id;
+    });
+    if (!draftId) return res.status(404).json({ message: 'Draft not found.' });
+    const draft = await prisma.mailDraft.findFirst({
+      where: { id: draftId, userId },
+      include: { attachments: { select: { id: true, filename: true, mimeType: true, size: true } } },
+    });
+    if (!draft) return res.status(404).json({ message: 'Draft not found.' });
+    const { attachments, ...draftFields } = draft;
+    return res.status(200).json({
+      draft: {
+        ...draftFields,
+        attachments: attachments.map(({ id: attachmentId, filename, mimeType, size }) => ({
+          id: attachmentId,
+          name: filename,
+          mimeType,
+          size,
+        })),
+      },
+    });
   } catch (error) {
     return next(error);
   }
@@ -844,6 +941,72 @@ router.delete('/drafts/:id', (req, res, next) => {
   }).then((result) => result.count
     ? res.status(204).end()
     : res.status(404).json({ message: 'Draft not found.' })).catch(next);
+});
+
+router.patch('/conversations/:id/actions', async (req, res, next) => {
+  const action = req.body?.action;
+  if (!['delete', 'markRead', 'markUnread', 'spam'].includes(action)) {
+    return res.status(400).json({ message: 'Unsupported conversation action.' });
+  }
+  const conversationId = req.params.id;
+  const user = res.locals.authenticatedUser;
+  try {
+    if (conversationId.startsWith(GROUP_CONVERSATION_PREFIX)) {
+      if (memoryStoreEnabled) return res.status(503).json({ message: 'Group conversations require persistent storage.' });
+      if (action === 'spam') return res.status(400).json({ message: 'Moving group conversations to spam is not supported.' });
+      const groupId = conversationId.slice(GROUP_CONVERSATION_PREFIX.length);
+      const membership = await prisma.groupChatMember.findFirst({
+        where: { groupChatId: groupId, userId: user.id },
+        select: { id: true },
+      });
+      if (!membership) return res.status(404).json({ message: 'Group conversation not found.' });
+      if (action === 'delete') {
+        const groupMessages = await prisma.groupChatMessage.findMany({
+          where: { groupChatId: groupId },
+          select: { id: true },
+        });
+        await prisma.groupChatMessageDeletion.createMany({
+          data: groupMessages.map(({ id }) => ({ messageId: id, userId: user.id })),
+          skipDuplicates: true,
+        });
+      } else {
+        await prisma.groupChatMember.update({
+          where: { id: membership.id },
+          data: { lastReadAt: action === 'markRead' ? new Date() : null },
+        });
+      }
+      return res.json({ success: true });
+    }
+
+    const peer = participantKey(conversationId.replace(/^conversation-/, ''));
+    const peerAddresses = peer.endsWith('@phonemail.com') || !peer.includes('@')
+      ? [peer, `${peer.replace(/@phonemail\.com$/, '')}@phonemail.com`]
+      : [peer];
+    if (!memoryStoreEnabled) {
+      if (action === 'delete' || action === 'spam') {
+        const mailbox = action === 'delete' ? 'trash' : 'spam';
+        await Promise.all([
+          prisma.inboundEmail.updateMany({ where: { userId: user.id, fromAddress: { in: peerAddresses } }, data: { mailbox } }),
+          prisma.mailMessage.updateMany({ where: { userId: user.id, peerAddress: { in: peerAddresses } }, data: { mailbox } }),
+        ]);
+      } else {
+        const isRead = action === 'markRead';
+        await Promise.all([
+          prisma.inboundEmail.updateMany({ where: { userId: user.id, fromAddress: { in: peerAddresses } }, data: { isRead } }),
+          prisma.mailMessage.updateMany({ where: { userId: user.id, peerAddress: { in: peerAddresses }, direction: 'in' }, data: { isRead } }),
+        ]);
+      }
+    }
+    for (const message of messages) {
+      if (!isMessageForUser(message, user.phoneNumber, user.email) || peerForMessage(message, user.phoneNumber) !== peer) continue;
+      if (action === 'delete') message.mailbox = 'trash';
+      else if (action === 'spam') message.mailbox = 'spam';
+      else if (message.from !== user.phoneNumber) message.read = action === 'markRead';
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.patch('/messages/:id', async (req, res, next) => {

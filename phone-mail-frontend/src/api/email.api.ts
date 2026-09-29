@@ -1,4 +1,4 @@
-import type { Conversation, Folder, MailFilter, Message, MessageAction, SendPayload } from '../types';
+import type { Attachment, Conversation, ConversationAction, Folder, MailFilter, Message, MessageAction, SendPayload } from '../types';
 import { DEMO_MODE, api, demoDelay } from './axios';
 import { CONTACTS, ME, MOCK_CONVERSATIONS, MOCK_MESSAGES } from './mock.data';
 
@@ -7,14 +7,55 @@ let demoConversations = MOCK_CONVERSATIONS.map((c) => ({ ...c }));
 let demoMessages: Record<string, Message[]> = Object.fromEntries(
   Object.entries(MOCK_MESSAGES).map(([id, msgs]) => [id, [...msgs]]),
 );
+const demoAttachmentFiles = new Map<string, File>();
+let nextDemoAttachmentId = 0;
+const DEMO_NICKNAMES_KEY = 'phonemail_demo_contact_nicknames';
+
+function loadDemoNicknames(): Map<string, string> {
+  try {
+    const saved = localStorage.getItem(DEMO_NICKNAMES_KEY);
+    if (!saved) return new Map();
+    const parsed: unknown = JSON.parse(saved);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Saved demo nicknames must be an object.');
+    }
+    return new Map(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string',
+      ),
+    );
+  } catch (error) {
+    console.warn('Could not load saved demo contact nicknames.', error);
+    return new Map();
+  }
+}
+
+let demoNicknames = loadDemoNicknames();
 export interface MailDraft {
   id: string;
   recipients: string[];
   subject: string;
   body: string;
   updatedAt: string;
+  attachments?: Array<{ id: string; name: string; mimeType: string; size: number }>;
 }
 let demoDrafts: MailDraft[] = [];
+const demoDraftAttachments = new Map<string, File[]>();
+
+export interface SharedContentItem {
+  id: string;
+  name: string;
+  size: number;
+  mimeType?: string;
+  createdAt: string;
+  conversation: string;
+  direction: 'in' | 'out';
+  url?: string;
+}
+
+function demoContactKey(phone: string) {
+  return phone.replace(/\D/g, '');
+}
 
 function persistDemoMail() {
   sessionStorage.setItem('phonemail_demo_mail', JSON.stringify({ conversations: demoConversations, messages: demoMessages }));
@@ -41,6 +82,10 @@ export async function listConversations(filter: MailFilter = 'all', query = '', 
         );
         return {
           ...conversation,
+          title: demoNicknames.get(demoContactKey(conversation.participants[0]?.phone ?? ''))
+            || conversation.title,
+          actualName: conversation.actualName ?? conversation.title,
+          nickname: demoNicknames.get(demoContactKey(conversation.participants[0]?.phone ?? '')) ?? '',
           lastMessage: {
             preview: latest.body,
             subject: latest.subject,
@@ -72,24 +117,62 @@ export async function listConversations(filter: MailFilter = 'all', query = '', 
 }
 
 export async function listDrafts(): Promise<MailDraft[]> {
-  if (DEMO_MODE) return demoDrafts;
+  if (DEMO_MODE) return demoDrafts.map((draft) => ({ ...draft, attachments: draft.attachments ?? [] }));
   const { data } = await api.get('/drafts');
-  return data.drafts;
+  return (data.drafts as Array<Omit<MailDraft, 'attachments'> & { attachments?: MailDraft['attachments'] }>).map((draft) => ({
+    ...draft,
+    attachments: draft.attachments ?? [],
+  }));
 }
 
-export async function saveDraft(draft: Partial<MailDraft> & Pick<MailDraft, 'recipients' | 'subject' | 'body'>): Promise<MailDraft> {
+export async function saveDraft(draft: Partial<MailDraft> & Pick<MailDraft, 'recipients' | 'subject' | 'body'> & { files?: File[] }): Promise<MailDraft> {
   if (DEMO_MODE) {
-    const saved = { ...draft, id: draft.id ?? `draft-${Date.now()}`, updatedAt: new Date().toISOString() };
+    const id = draft.id ?? `draft-${Date.now()}`;
+    const files = draft.files ?? [];
+    demoDraftAttachments.set(id, files);
+    const saved: MailDraft = {
+      id,
+      recipients: draft.recipients,
+      subject: draft.subject,
+      body: draft.body,
+      updatedAt: new Date().toISOString(),
+      attachments: files.map((file, index) => ({
+        id: `${id}-${index}`,
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        size: file.size,
+      })),
+    };
     demoDrafts = [saved, ...demoDrafts.filter((item) => item.id !== saved.id)];
     return saved;
   }
-  const { data } = await api.post('/drafts', draft);
+  const form = new FormData();
+  if (draft.id) form.append('id', draft.id);
+  form.append('recipients', JSON.stringify(draft.recipients));
+  form.append('subject', draft.subject);
+  form.append('body', draft.body);
+  draft.files?.forEach((file) => form.append('attachments', file));
+  const { data } = await api.post('/drafts', form);
   return data.draft;
+}
+
+export async function getDraftAttachment(draftId: string, attachmentId: string, filename: string, mimeType: string): Promise<File> {
+  if (DEMO_MODE) {
+    const index = Number(attachmentId.slice(draftId.length + 1));
+    const file = demoDraftAttachments.get(draftId)?.[index];
+    if (!file) throw new Error('Draft attachment was not found.');
+    return file;
+  }
+  const { data } = await api.get(`/drafts/${encodeURIComponent(draftId)}/attachments/${encodeURIComponent(attachmentId)}`, {
+    responseType: 'blob',
+  });
+  return new File([data as Blob], filename, { type: mimeType });
 }
 
 export async function deleteDraft(id: string): Promise<void> {
   if (DEMO_MODE) {
     demoDrafts = demoDrafts.filter((draft) => draft.id !== id);
+    demoDraftAttachments.delete(id);
     return;
   }
   await api.delete(`/drafts/${id}`);
@@ -114,6 +197,27 @@ export async function updateMessage(messageId: string, action: MessageAction): P
   }
   const { data } = await api.patch(`/messages/${messageId}`, { action });
   return data.message ?? data;
+}
+
+export async function updateConversationAction(conversationId: string, action: ConversationAction): Promise<void> {
+  if (DEMO_MODE) {
+    await demoDelay(180);
+    const conversation = demoConversations.find((item) => item.id === conversationId);
+    if (!conversation) throw new Error('Conversation not found.');
+    const conversationMessages = demoMessages[conversationId] ?? [];
+    if (action === 'delete') {
+      conversationMessages.forEach((message) => { message.mailbox = 'trash'; });
+    } else if (action === 'spam') {
+      conversationMessages.forEach((message) => { message.mailbox = 'spam'; });
+    } else {
+      conversationMessages.forEach((message) => {
+        if (message.direction === 'in') message.read = action === 'markRead';
+      });
+    }
+    persistDemoMail();
+    return;
+  }
+  await api.patch(`/conversations/${encodeURIComponent(conversationId)}/actions`, { action });
 }
 
 /** GET /conversations/:id/messages */
@@ -186,7 +290,17 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
       inReplyToId: payload.inReplyTo,
       quotedText: original?.body,
       status: 'sent',
-      attachments: payload.attachments?.map((f, i) => ({ id: `f${i}`, name: f.name, size: f.size })),
+      attachments: payload.attachments?.map((file) => {
+        const id = `demo-file-${Date.now()}-${nextDemoAttachmentId++}`;
+        demoAttachmentFiles.set(id, file);
+        return {
+          id,
+          name: file.name,
+          size: file.size,
+          mimeType: file.type,
+          url: `/api/attachments/${encodeURIComponent(id)}`,
+        };
+      }),
     };
     if (isGroup) msg.isGroup = true;
 
@@ -207,6 +321,7 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
   if (payload.conversationId) form.append('conversationId', payload.conversationId);
   if (payload.subject) form.append('subject', payload.subject);
   if (payload.inReplyTo) form.append('inReplyTo', payload.inReplyTo);
+  if (payload.quotedText) form.append('quotedText', payload.quotedText);
   form.append('body', payload.body);
   payload.attachments?.forEach((file) => form.append('attachments', file));
 
@@ -218,12 +333,16 @@ export async function sendMessage(payload: SendPayload): Promise<Message> {
         body: payload.body,
         conversationId: payload.conversationId,
         inReplyTo: payload.inReplyTo,
+        quotedText: payload.quotedText,
       });
   return data.message ?? data;
 }
 
 export async function downloadAttachment(id: string, filename: string): Promise<void> {
-  const { data } = await api.get(`/attachments/${encodeURIComponent(id)}`, { responseType: 'blob' });
+  const data = DEMO_MODE
+    ? demoAttachmentFiles.get(id)
+    : (await api.get(`/attachments/${encodeURIComponent(id)}`, { responseType: 'blob' })).data as Blob;
+  if (!data) throw new Error('This attachment is no longer available.');
   const url = URL.createObjectURL(data);
   const link = document.createElement('a');
   link.href = url;
@@ -232,6 +351,69 @@ export async function downloadAttachment(id: string, filename: string): Promise<
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+export function isPreviewableAttachment(attachment: Pick<Attachment, 'name'> & Partial<Pick<Attachment, 'mimeType'>>) {
+  const mimeType = attachment.mimeType?.toLowerCase().split(';', 1)[0];
+  if (mimeType && ['application/pdf', 'text/plain', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mimeType)) {
+    return true;
+  }
+  return /\.(?:pdf|txt|jpe?g|png|gif|webp)$/i.test(attachment.name);
+}
+
+export async function openAttachment(id: string, filename: string): Promise<void> {
+  const previewWindow = window.open('', '_blank');
+  if (!previewWindow) throw new Error('Allow pop-ups to open this attachment.');
+  previewWindow.opener = null;
+
+  try {
+    const data = DEMO_MODE
+      ? demoAttachmentFiles.get(id)
+      : (await api.get(`/attachments/${encodeURIComponent(id)}`, { responseType: 'blob' })).data as Blob;
+    if (!data) throw new Error('This attachment is no longer available.');
+    const suppliedType = data.type.toLowerCase().split(';', 1)[0];
+    const extensionType: Record<string, string> = {
+      pdf: 'application/pdf',
+      txt: 'text/plain',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+    };
+    const extension = filename.split('.').pop()?.toLowerCase();
+    const mimeType = ['application/pdf', 'text/plain', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(suppliedType)
+      ? suppliedType
+      : extensionType[extension ?? ''] ?? suppliedType;
+    if (!['application/pdf', 'text/plain', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mimeType)) {
+      throw new Error('Preview is unavailable for this file type. Download it to open it.');
+    }
+
+    const preview = suppliedType === mimeType ? data : new Blob([data], { type: mimeType });
+    const url = URL.createObjectURL(preview);
+    previewWindow.location.replace(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    previewWindow.close();
+    throw error;
+  }
+}
+
+export async function listSharedContent(): Promise<SharedContentItem[]> {
+  if (DEMO_MODE) {
+    await demoDelay(150);
+    return Object.entries(demoMessages).flatMap(([conversationId, messages]) => {
+      const conversation = demoConversations.find((item) => item.id === conversationId);
+      return messages.flatMap((message) => (message.attachments ?? []).map((attachment) => ({
+        ...attachment,
+        createdAt: message.createdAt,
+        conversation: conversation?.title ?? conversationId,
+        direction: message.direction,
+      })));
+    }).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+  const { data } = await api.get('/shared-content');
+  return data.attachments ?? [];
 }
 
 /** PATCH /conversations/:id  { isFavourite } */
@@ -263,6 +445,17 @@ export async function updateConversation(
 }
 
 export async function saveContactNickname(phone: string, nickname: string): Promise<string> {
+  if (DEMO_MODE) {
+    await demoDelay(120);
+    const key = demoContactKey(phone);
+    if (!key) throw new Error('Choose a valid contact to save a nickname for.');
+    const nextNicknames = new Map(demoNicknames);
+    if (nickname.trim()) nextNicknames.set(key, nickname.trim());
+    else nextNicknames.delete(key);
+    localStorage.setItem(DEMO_NICKNAMES_KEY, JSON.stringify(Object.fromEntries(nextNicknames)));
+    demoNicknames = nextNicknames;
+    return nickname.trim();
+  }
   const { data } = await api.patch(`/contacts/${encodeURIComponent(phone)}/nickname`, { nickname });
   return data.nickname;
 }

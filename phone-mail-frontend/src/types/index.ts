@@ -21,6 +21,7 @@ export interface Attachment {
   id: string;
   name: string;
   size: number; // bytes
+  mimeType?: string;
   url?: string;
 }
 
@@ -76,7 +77,9 @@ export interface SendPayload {
   body: string;
   conversationId?: string;
   inReplyTo?: string;
+  quotedText?: string;
   attachments?: File[];
 }
 
 export type MessageAction = 'star' | 'spam' | 'trash' | 'restore' | 'delete' | 'markRead';
+export type ConversationAction = 'delete' | 'markRead' | 'markUnread' | 'spam';

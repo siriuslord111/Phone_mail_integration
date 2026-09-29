@@ -4,6 +4,7 @@ import { prisma } from '../config/prisma';
 import type { User } from '../store';
 import { sendOutboundEmail } from './email.service';
 import { findAccountByEmail } from './account.service';
+import { TwilioService } from './twilio.service';
 
 export class UnknownPhoneMailRecipientError extends Error {
   constructor(address: string) {
@@ -22,6 +23,8 @@ export async function deliverEmail(input: {
   recipients: string[];
   subject: string;
   body: string;
+  replyToId?: string;
+  quotedText?: string;
   attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
 }) {
   const localRecipients: User[] = [];
@@ -40,7 +43,7 @@ export async function deliverEmail(input: {
   }
 
   let externalDelivery: { delivered: boolean } | undefined;
-  let senderAttachments: Array<{ id: string; filename: string; size: number }> = [];
+  let senderAttachments: Array<{ id: string; filename: string; size: number; mimeType: string }> = [];
   if (externalRecipients.length) {
     externalDelivery = await sendOutboundEmail({
       from: input.sender.email,
@@ -51,8 +54,8 @@ export async function deliverEmail(input: {
     });
   }
 
-  if (localRecipients.length) {
-    const copies = localRecipients.flatMap((recipient) => [
+  const copies = [
+    ...localRecipients.flatMap((recipient) => [
       {
         messageId: randomUUID(),
         userId: input.sender.id,
@@ -61,6 +64,8 @@ export async function deliverEmail(input: {
         toAddress: recipient.email,
         subject: input.subject,
         body: input.body,
+        replyToId: input.replyToId,
+        quotedText: input.quotedText,
         direction: 'out',
         mailbox: 'sent',
         isRead: true,
@@ -73,12 +78,30 @@ export async function deliverEmail(input: {
         toAddress: recipient.email,
         subject: input.subject,
         body: input.body,
+        replyToId: input.replyToId,
+        quotedText: input.quotedText,
         direction: 'in',
         mailbox: 'inbox',
         isRead: false,
       },
-    ]);
+    ]),
+    ...externalRecipients.map((recipient) => ({
+      messageId: randomUUID(),
+      userId: input.sender.id,
+      peerAddress: recipient,
+      fromAddress: input.sender.email,
+      toAddress: recipient,
+      subject: input.subject,
+      body: input.body,
+      replyToId: input.replyToId,
+      quotedText: input.quotedText,
+      direction: 'out',
+      mailbox: 'sent',
+      isRead: true,
+    })),
+  ];
 
+  if (copies.length > 0) {
     const savedCopies = await prisma.$transaction(async (transaction) => {
       const created = [];
       for (const copy of copies) {
@@ -94,16 +117,24 @@ export async function deliverEmail(input: {
               })),
             },
           },
-          include: { attachments: { select: { id: true, filename: true, size: true } } },
+          include: { attachments: { select: { id: true, filename: true, size: true, mimeType: true } } },
         }));
       }
       return created;
     });
-    const senderCopy = savedCopies.find(
-      (copy) => copy.userId === input.sender.id && copy.peerAddress === localRecipients[0].phoneNumber,
-    );
+    const senderCopy = savedCopies.find((copy) => copy.userId === input.sender.id);
     senderAttachments = senderCopy?.attachments ?? [];
   }
+
+  await Promise.all(
+    localRecipients
+      .filter((recipient) => !recipient.hasMobileApp)
+      .map((recipient) => TwilioService.sendEmailNotificationSMS(
+        recipient.phoneNumber,
+        input.sender.phoneNumber,
+        input.subject,
+      )),
+  );
 
   return {
     delivered: true,

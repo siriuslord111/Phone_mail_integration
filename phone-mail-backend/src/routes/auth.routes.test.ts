@@ -76,6 +76,26 @@ test('password registration hashes credentials and issues an authenticated sessi
   const login = await loginResponse.json() as { token: string };
   assert.ok(login.token);
 
+  const rejectedPasswordChange = await fetch(`${baseUrl}/api/auth/change-password`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${login.token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ currentPassword: 'not the password', newPassword: 'new secure password' }),
+  });
+  assert.equal(rejectedPasswordChange.status, 401);
+
+  const passwordChange = await fetch(`${baseUrl}/api/auth/change-password`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${login.token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ currentPassword: password, newPassword: 'new secure password' }),
+  });
+  assert.equal(passwordChange.status, 200);
+
   const profileResponse = await fetch(`${baseUrl}/api/users/me`, {
     headers: { authorization: `Bearer ${login.token}` },
   });
@@ -194,4 +214,84 @@ test('account registration requires a valid one-time OTP and consumes it once', 
     body: JSON.stringify({ phone, otp, client: 'web' }),
   });
   assert.equal(replay.status, 401);
+});
+
+test('shared content requires authentication and avoids reporting unstored files', async () => {
+  const unauthorized = await fetch(`${baseUrl}/api/shared-content`);
+  assert.equal(unauthorized.status, 401);
+
+  const phone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
+  const registrationResponse = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone, password: 'shared-content-test-password' }),
+  });
+  assert.equal(registrationResponse.status, 201);
+  const registration = await registrationResponse.json() as { token: string };
+
+  const response = await fetch(`${baseUrl}/api/shared-content`, {
+    headers: { authorization: `Bearer ${registration.token}` },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { attachments: [] });
+});
+
+test('conversation actions toggle read status and move messages to recoverable trash', async () => {
+  const phone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
+  const peerPhone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
+  const registrationResponse = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone, password: 'conversation-action-test-password' }),
+  });
+  assert.equal(registrationResponse.status, 201);
+  const registration = await registrationResponse.json() as { token: string; user: { phoneNumber: string } };
+  const message = {
+    id: `conversation-action-${Date.now()}`,
+    from: peerPhone,
+    to: [registration.user.phoneNumber],
+    subject: '',
+    body: 'Conversation action test',
+    createdAt: new Date().toISOString(),
+    read: false,
+  };
+  messages.push(message);
+
+  try {
+    const conversationsResponse = await fetch(`${baseUrl}/api/conversations`, {
+      headers: { authorization: `Bearer ${registration.token}` },
+    });
+    const conversations = await conversationsResponse.json() as { conversations: Array<{ id: string }> };
+    const conversation = conversations.conversations.find((item) => item.id !== undefined);
+    assert.ok(conversation);
+
+    const applyAction = async (action: string) => fetch(`${baseUrl}/api/conversations/${encodeURIComponent(conversation.id)}/actions`, {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${registration.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ action }),
+    });
+
+    assert.equal((await applyAction('markRead')).status, 200);
+    assert.equal(message.read, true);
+    assert.equal((await applyAction('markUnread')).status, 200);
+    assert.equal(message.read, false);
+    assert.equal((await applyAction('delete')).status, 200);
+    assert.equal(message.mailbox, 'trash');
+
+    const inboxResponse = await fetch(`${baseUrl}/api/conversations?folder=inbox`, {
+      headers: { authorization: `Bearer ${registration.token}` },
+    });
+    const inbox = await inboxResponse.json() as { conversations: Array<{ id: string }> };
+    assert.equal(inbox.conversations.some((item) => item.id === conversation.id), false);
+    const trashResponse = await fetch(`${baseUrl}/api/conversations?folder=trash`, {
+      headers: { authorization: `Bearer ${registration.token}` },
+    });
+    const trash = await trashResponse.json() as { conversations: Array<{ id: string }> };
+    assert.equal(trash.conversations.some((item) => item.id === conversation.id), true);
+  } finally {
+    messages.splice(messages.indexOf(message), 1);
+  }
 });

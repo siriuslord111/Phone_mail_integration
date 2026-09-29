@@ -1,5 +1,6 @@
 import { ArrowLeft, Paperclip, Reply } from 'lucide-react';
 import { Button } from '../common/Buttons';
+import { SharedFileActions } from '../common/SharedFileActions';
 import { formatBytes, formatFullDate, getInitials, avatarColor } from '../../utils/formatters';
 import type { Message } from '../../types';
 import { useLanguage } from '../../context/LanguageProvider';
@@ -26,7 +27,7 @@ export function ExpandedEmailView({ message, senderName, onBack, onReply }: Expa
           <ArrowLeft className="size-5" />
         </button>
         <p className="truncate text-[15px] font-semibold text-slate-800">
-          {message.subject ?? t('emailSubjectFallback')}
+          {message.subject?.trim() || t('noSubject')}
         </p>
       </header>
 
@@ -62,7 +63,7 @@ export function ExpandedEmailView({ message, senderName, onBack, onReply }: Expa
               {message.attachments.length} {t('attachments')}
             </p>
             {message.attachments.map((att) => (
-              <div key={att.id} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3.5 py-2.5">
+              <div key={att.id} className="flex min-w-0 items-center gap-3 rounded-xl bg-slate-50 px-3.5 py-2.5">
                 <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-white text-slate-400 ring-1 ring-slate-200">
                   <Paperclip className="size-4" />
                 </span>
@@ -70,6 +71,7 @@ export function ExpandedEmailView({ message, senderName, onBack, onReply }: Expa
                   <p className="truncate text-sm font-medium text-slate-700">{att.name}</p>
                   <p className="text-xs text-slate-400">{formatBytes(att.size)}</p>
                 </div>
+                <SharedFileActions attachment={att} />
               </div>
             ))}
           </div>

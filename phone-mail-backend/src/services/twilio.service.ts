@@ -70,7 +70,7 @@ export class TwilioService {
 
     try {
       if (!client || !process.env.TWILIO_PHONE_NUMBER) {
-        console.log(`Mock SMS to ${toPhone}: ${message}`);
+        console.warn('Notification SMS was not sent because Twilio is not configured.');
         return false;
       }
 
@@ -81,9 +81,8 @@ export class TwilioService {
       });
 
       return true;
-    } catch (error) {
-      console.warn('Notification SMS not delivered via Twilio, using demo message:', error);
-      console.log(`Mock SMS to ${toPhone}: ${message}`);
+    } catch {
+      console.warn('Notification SMS delivery failed via Twilio.');
       return false;
     }
   }

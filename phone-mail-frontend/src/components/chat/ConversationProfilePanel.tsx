@@ -1,10 +1,9 @@
-import { ArrowLeft, Camera, Download, FileText, Image, Link2, PlaySquare, X } from 'lucide-react';
+import { ArrowLeft, Camera, FileText, Image, Link2, PlaySquare, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { getErrorMessage } from '../../api/axios';
-import { downloadAttachment } from '../../api/email.api';
 import type { Attachment, Conversation, Message } from '../../types';
 import { getInitials, avatarColor } from '../../utils/formatters';
 import { useLanguage } from '../../context/LanguageProvider';
+import { SharedFileActions } from '../common/SharedFileActions';
 
 interface ConversationProfilePanelProps {
   conversation: Conversation;
@@ -32,7 +31,6 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   const [nicknameSaved, setNicknameSaved] = useState(false);
   const [nicknameError, setNicknameError] = useState('');
   const [sharedCategory, setSharedCategory] = useState<SharedCategory | null>(null);
-  const [attachmentError, setAttachmentError] = useState('');
   const sharedItems = useMemo(() => {
     const photos: Attachment[] = [];
     const files: Attachment[] = [];
@@ -148,14 +146,14 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
                   onChange={(event) => { setNickname(event.target.value); setNicknameSaved(false); }}
                   maxLength={100}
                   placeholder={conversation.actualName || t('save')}
-                  className="min-w-0 flex-1 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]"
+                  className="min-w-0 flex-1 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]"
                   aria-label={t('privateNickname')}
                 />
                 <button
                   type="button"
                   onClick={() => void saveNickname()}
                   disabled={nicknameSaving}
-                  className="shrink-0 rounded-xl bg-[#1a66ff] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  className="shrink-0 rounded-xl bg-[#1a66ff] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
                 >
                   {nicknameSaving ? t('saving') : nicknameSaved ? t('nicknameSaved') : t('save')}
                 </button>
@@ -186,11 +184,11 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
 
       <section className="mt-2 bg-white p-4">
         <h3 className="mb-3 font-semibold text-slate-800">{t('sharedContent')}</h3>
-        <div className="grid grid-cols-4 gap-2 text-center text-xs text-slate-500">
-          <Shared icon={Image} label={t('photos')} count={sharedItems.photos.length} active={sharedCategory === 'photos'} onClick={() => { setSharedCategory('photos'); setAttachmentError(''); }} />
-          <Shared icon={FileText} label={t('files')} count={sharedItems.files.length} active={sharedCategory === 'files'} onClick={() => { setSharedCategory('files'); setAttachmentError(''); }} />
-          <Shared icon={Link2} label={t('links')} count={sharedItems.links.length} active={sharedCategory === 'links'} onClick={() => { setSharedCategory('links'); setAttachmentError(''); }} />
-          <Shared icon={PlaySquare} label={t('media')} count={sharedItems.media.length} active={sharedCategory === 'media'} onClick={() => { setSharedCategory('media'); setAttachmentError(''); }} />
+        <div className="grid grid-cols-2 gap-2 text-center text-xs text-slate-500 sm:grid-cols-4">
+          <Shared icon={Image} label={t('photos')} count={sharedItems.photos.length} active={sharedCategory === 'photos'} onClick={() => setSharedCategory('photos')} />
+          <Shared icon={FileText} label={t('files')} count={sharedItems.files.length} active={sharedCategory === 'files'} onClick={() => setSharedCategory('files')} />
+          <Shared icon={Link2} label={t('links')} count={sharedItems.links.length} active={sharedCategory === 'links'} onClick={() => setSharedCategory('links')} />
+          <Shared icon={PlaySquare} label={t('media')} count={sharedItems.media.length} active={sharedCategory === 'media'} onClick={() => setSharedCategory('media')} />
         </div>
         {sharedCategory && (
           <div className="mt-3 space-y-2">
@@ -208,26 +206,15 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
               ))
             ) : (
               sharedItems[sharedCategory].map((attachment) => (
-                <button
-                  key={attachment.id}
-                  type="button"
-                  onClick={() => {
-                    setAttachmentError('');
-                    void downloadAttachment(attachment.id, attachment.name).catch((error: unknown) => {
-                      setAttachmentError(getErrorMessage(error, t('couldNotDownloadAttachment')));
-                    });
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100"
-                >
-                  <Download className="size-4 shrink-0 text-[#1a66ff]" />
+                <div key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
                   <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
-                </button>
+                  <SharedFileActions attachment={attachment} />
+                </div>
               ))
             )}
             {sharedItems[sharedCategory].length === 0 && (
               <p className="rounded-lg bg-slate-50 px-3 py-3 text-center text-sm text-slate-500">{t('noSharedItems')}</p>
             )}
-            {attachmentError && <p role="alert" className="text-sm text-rose-600">{attachmentError}</p>}
           </div>
         )}
       </section>
@@ -268,11 +255,10 @@ function Shared({ icon: Icon, label, count, active, onClick }: { icon: typeof Im
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`rounded-xl p-3 transition-colors ${active ? 'bg-blue-50 text-[#1a66ff] ring-1 ring-blue-200' : 'bg-slate-50 hover:bg-blue-50'}`}
+      className={`min-w-0 rounded-xl p-3 transition-colors ${active ? 'bg-blue-50 text-[#1a66ff] ring-1 ring-blue-200' : 'bg-slate-50 hover:bg-blue-50'}`}
     >
       <Icon className="mx-auto mb-1 size-5 text-[#1a66ff]" />
-      {label}
-      <span className="ml-1">({count})</span>
+      <span className="block break-words">{label} ({count})</span>
     </button>
   );
 }
