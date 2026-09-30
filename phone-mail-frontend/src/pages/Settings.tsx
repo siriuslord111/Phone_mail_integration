@@ -230,6 +230,12 @@ export default function Settings() {
             </div>
           </div>
           <p className="mt-5 text-sm leading-6 text-slate-600">{t(option.detail)}</p>
+          {option.id === 'security' && (
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <h2 className="text-sm font-semibold text-slate-800">{t('webSecurity')}</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600">{t('webSecurityDetail')}</p>
+            </div>
+          )}
           {option.id === 'instructions' && (
             <ol className="mt-5 divide-y divide-slate-100 border-t border-slate-100">
               {INSTRUCTIONS.map((instruction, index) => (
@@ -293,13 +299,15 @@ export default function Settings() {
                 </p>
               )}
               {passwordStatus && <p role="status" className="text-sm text-emerald-700">{passwordStatus}</p>}
-              <button
-                type="submit"
-                disabled={changingPassword}
-                className="inline-flex items-center justify-center rounded-xl bg-[#1a66ff] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b4fe0] disabled:opacity-60"
-              >
-                {changingPassword ? t('saving') : t('changePassword')}
-              </button>
+              {(currentPassword || newPassword || confirmNewPassword) && (
+                <button
+                  type="submit"
+                  disabled={changingPassword}
+                  className="inline-flex items-center justify-center rounded-xl bg-[#1a66ff] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b4fe0] disabled:opacity-60"
+                >
+                  {changingPassword ? t('saving') : t('changePassword')}
+                </button>
+              )}
             </form>
           )}
           {option.id === 'language' && (

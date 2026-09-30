@@ -143,12 +143,18 @@ export async function listConversations(filter: MailFilter = 'all', query = '', 
         const latest = messages.reduce((current, message) =>
           message.createdAt > current.createdAt ? message : current,
         );
+        const participants = conversation.participants.map((participant) => ({
+          ...participant,
+          nickname: demoNicknames.get(demoContactKey(participant.phone)) ?? '',
+        }));
         return {
           ...conversation,
-          title: demoNicknames.get(demoContactKey(conversation.participants[0]?.phone ?? ''))
-            || conversation.title,
+          title: !conversation.isGroup
+            ? demoNicknames.get(demoContactKey(participants[0]?.phone ?? '')) || conversation.title
+            : conversation.title,
           actualName: conversation.actualName ?? conversation.title,
-          nickname: demoNicknames.get(demoContactKey(conversation.participants[0]?.phone ?? '')) ?? '',
+          participants,
+          nickname: !conversation.isGroup ? participants[0]?.nickname ?? '' : '',
           lastMessage: {
             preview: latest.body,
             subject: latest.subject,
@@ -168,7 +174,11 @@ export async function listConversations(filter: MailFilter = 'all', query = '', 
         if (!q) return true;
         return (
           conversation.title.toLowerCase().includes(q) ||
-          conversation.participants.some((p) => p.phone.includes(q) || p.name.toLowerCase().includes(q))
+          conversation.participants.some((p) =>
+            p.phone.includes(q) ||
+            p.name.toLowerCase().includes(q) ||
+            p.nickname?.toLowerCase().includes(q),
+          )
         );
       })
       .sort((a, b) => +new Date(b.lastMessage.createdAt) - +new Date(a.lastMessage.createdAt));
@@ -285,8 +295,13 @@ export async function updateConversationAction(conversationId: string, action: C
     const conversationMessages = demoMessages[conversationId] ?? [];
     if (action === 'delete') {
       conversationMessages.forEach((message) => { message.mailbox = 'trash'; });
+    } else if (action === 'deletePermanently') {
+      demoConversations = demoConversations.filter((item) => item.id !== conversationId);
+      delete demoMessages[conversationId];
     } else if (action === 'spam') {
       conversationMessages.forEach((message) => { message.mailbox = 'spam'; });
+    } else if (action === 'restore') {
+      conversationMessages.forEach((message) => { message.mailbox = 'inbox'; });
     } else {
       conversationMessages.forEach((message) => {
         if (message.direction === 'in') message.read = action === 'markRead';

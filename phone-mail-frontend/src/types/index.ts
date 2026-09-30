@@ -12,6 +12,7 @@ export interface User {
 export interface Participant {
   phone: string;
   name: string;
+  nickname?: string;
   online?: boolean;
   avatarUrl?: string;
   bio?: string;
@@ -82,4 +83,4 @@ export interface SendPayload {
 }
 
 export type MessageAction = 'star' | 'spam' | 'trash' | 'restore' | 'delete' | 'markRead';
-export type ConversationAction = 'delete' | 'markRead' | 'markUnread' | 'spam';
+export type ConversationAction = 'delete' | 'deletePermanently' | 'markRead' | 'markUnread' | 'spam' | 'restore';

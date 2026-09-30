@@ -7,12 +7,14 @@ import { ComposeBar } from '../components/chat/ComposeBar';
 import { MessageBubble } from '../components/chat/MessageBubble';
 import { ConversationProfilePanel } from '../components/chat/ConversationProfilePanel';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { getErrorMessage } from '../api/axios';
 import { useLayoutContext } from '../hooks/useLayoutContext';
 import { useLanguage } from '../context/LanguageProvider';
 import {
   getMessages,
   listConversations,
   listDrafts,
+  deleteDraft,
   sendMessage,
   saveContactNickname,
   updateConversationAction,
@@ -57,6 +59,23 @@ function readConversationListWidth() {
   return Number.isFinite(stored) && stored > 0 ? stored : 352;
 }
 
+function keepActiveUnreadConversation(
+  items: Conversation[],
+  pinned: { conversation: Conversation; index: number; search: string } | null,
+  activeId: string | null,
+  filter: MailFilter,
+  search: string,
+) {
+  if (filter !== 'unread' || !pinned || pinned.search !== search || pinned.conversation.id !== activeId) {
+    return items;
+  }
+  if (items.some((item) => item.id === activeId)) return items;
+  const preserved = { ...pinned.conversation, unreadCount: 0 };
+  const next = [...items];
+  next.splice(Math.min(pinned.index, next.length), 0, preserved);
+  return next;
+}
+
 export default function Dashboard() {
   const { t } = useLanguage();
   const { pathname } = useLocation();
@@ -71,10 +90,14 @@ export default function Dashboard() {
   const [drafts, setDrafts] = useState<MailDraft[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [conversationActionError, setConversationActionError] = useState('');
+  const [draftActionError, setDraftActionError] = useState('');
   const [conversationListWidth, setConversationListWidth] = useState(readConversationListWidth);
   const splitPaneRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef(false);
+  const activeChatId = useRef(chatId);
+  const pinnedUnreadConversation = useRef<{ conversation: Conversation; index: number; search: string } | null>(null);
   const folder = FOLDER_BY_PATH[pathname] ?? 'inbox';
+  activeChatId.current = chatId;
 
   useEffect(() => {
     let cancelled = false;
@@ -87,35 +110,69 @@ export default function Dashboard() {
       : listConversations(filter, search, folder);
     load.then((data) => {
       if (!cancelled) {
-        setConversations(data);
+        setConversations(keepActiveUnreadConversation(
+          data,
+          pinnedUnreadConversation.current,
+          chatId,
+          filter,
+          search,
+        ));
         setListLoading(false);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [filter, search, pathname, composeMode, folder, chatId]);
+  }, [filter, search, pathname, composeMode, folder]);
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === chatId) ?? null,
     [conversations, chatId],
   );
 
-  const openChat = (c: Conversation) => setParams({ chat: c.id });
-  const closeChat = () => setParams({});
+  const openChat = (c: Conversation) => {
+    pinnedUnreadConversation.current = filter === 'unread'
+      ? { conversation: c, index: conversations.findIndex((item) => item.id === c.id), search }
+      : null;
+    setParams({ chat: c.id });
+  };
   const openCompose = (prefill?: string) => setParams((p) => ({ ...Object.fromEntries(p), compose: prefill || '1' }));
   const refreshList = useCallback(
-    () => listConversations(filter, search, folder).then(setConversations),
+    () => listConversations(filter, search, folder).then((items) => {
+      setConversations(keepActiveUnreadConversation(
+        items,
+        pinnedUnreadConversation.current,
+        activeChatId.current,
+        filter,
+        search,
+      ));
+    }),
     [filter, folder, search],
   );
+  const closeChat = () => {
+    pinnedUnreadConversation.current = null;
+    activeChatId.current = null;
+    setParams({});
+    if (filter === 'unread') void refreshList();
+  };
   const handleConversationAction = async (conversation: Conversation, action: ConversationAction) => {
+    if (action === 'deletePermanently' && !window.confirm(t('deletePermanentlyConfirm'))) return;
     setConversationActionError('');
     try {
       await updateConversationAction(conversation.id, action);
       await refreshList();
-      if ((action === 'delete' || action === 'spam') && chatId === conversation.id) closeChat();
+      if ((action === 'delete' || action === 'deletePermanently' || action === 'spam') && chatId === conversation.id) closeChat();
     } catch {
       setConversationActionError(t('couldNotUpdateConversation'));
+    }
+  };
+  const handleDraftDelete = async (draft: MailDraft) => {
+    setDraftActionError('');
+    try {
+      await deleteDraft(draft.id);
+      setDrafts((items) => items.filter((item) => item.id !== draft.id));
+    } catch (error) {
+      setDraftActionError(getErrorMessage(error, t('couldNotDiscardDraft')));
     }
   };
 
@@ -166,6 +223,8 @@ export default function Dashboard() {
             drafts={drafts}
             loading={listLoading}
             onOpen={(draft) => openCompose(`draft:${draft.id}`)}
+            onDelete={(draft) => { void handleDraftDelete(draft); }}
+            actionError={draftActionError}
           />
         ) : (
           <MailList
@@ -177,7 +236,9 @@ export default function Dashboard() {
             onOpen={openChat}
             onConversationAction={(conversation, action) => { void handleConversationAction(conversation, action); }}
             canMoveToSpam={folder !== 'spam' && folder !== 'trash'}
-            canDeleteConversation={folder !== 'trash'}
+            canRestore={folder === 'spam'}
+            canDeleteConversation={folder !== 'spam' && folder !== 'trash'}
+            canDeletePermanently={folder === 'spam' || folder === 'trash'}
             actionError={conversationActionError}
             search={search}
           />
@@ -240,6 +301,7 @@ export default function Dashboard() {
             }}
             onComposeTraditional={(phone) => openCompose(phone)}
             onRead={refreshList}
+            onConversationUpdate={refreshList}
             onSaveNickname={async (phone, nickname) => {
               await saveContactNickname(phone, nickname);
               await refreshList();
@@ -254,33 +316,105 @@ export default function Dashboard() {
   );
 }
 
-function DraftList({ drafts, loading, onOpen }: {
+function DraftList({ drafts, loading, onOpen, onDelete, actionError }: {
   drafts: MailDraft[];
   loading: boolean;
   onOpen: (draft: MailDraft) => void;
+  onDelete: (draft: MailDraft) => void;
+  actionError: string;
 }) {
   const { t } = useLanguage();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [contextMenu, setContextMenu] = useState<{ draft: MailDraft; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setContextMenu(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setContextMenu(null);
+    };
+    const closeOnNarrowResize = () => {
+      if (!window.matchMedia('(min-width: 768px)').matches) setContextMenu(null);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnNarrowResize);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnNarrowResize);
+    };
+  }, [contextMenu]);
+
   if (loading) return <div className="flex-1"><LoadingSpinner label={t('loadingDrafts')} /></div>;
   if (drafts.length === 0) return (
     <div className="grid flex-1 place-items-center text-sm text-slate-400">{t('noSavedDrafts')}</div>
   );
   return (
-    <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto">
-      {drafts.map((draft) => (
-        <li key={draft.id}>
+    <>
+      {actionError && (
+        <p role="alert" className="mx-4 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 md:mx-5">
+          {actionError}
+        </p>
+      )}
+      <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto">
+        {drafts.map((draft) => (
+          <li key={draft.id}>
+            <button
+              onClick={() => onOpen(draft)}
+              onContextMenu={(event) => {
+                if (!window.matchMedia('(min-width: 768px)').matches) return;
+                event.preventDefault();
+                setContextMenu({
+                  draft,
+                  x: Math.min(event.clientX, window.innerWidth - 210),
+                  y: Math.min(event.clientY, window.innerHeight - 120),
+                });
+              }}
+              className="w-full px-5 py-4 text-left transition hover:bg-slate-50"
+            >
+              <p className="truncate text-sm font-medium text-slate-800">
+                {draft.recipients.length ? `${t('to')}: ${draft.recipients.join(', ')}` : t('noRecipient')}
+              </p>
+              <p className="mt-1 truncate text-sm text-slate-600">{draft.subject || t('noSubject')}</p>
+              <p className="mt-1 truncate text-xs text-slate-400">{draft.body || t('emptyDraft')}</p>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={contextMenu.draft.subject || t('noSubject')}
+          className="fixed z-50 min-w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"
+          style={{ left: Math.max(8, contextMenu.x), top: Math.max(8, contextMenu.y) }}
+        >
           <button
-            onClick={() => onOpen(draft)}
-            className="w-full px-5 py-4 text-left transition hover:bg-slate-50"
+            role="menuitem"
+            onClick={() => {
+              onOpen(contextMenu.draft);
+              setContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100"
           >
-            <p className="truncate text-sm font-medium text-slate-800">
-              {draft.recipients.length ? `${t('to')}: ${draft.recipients.join(', ')}` : t('noRecipient')}
-            </p>
-            <p className="mt-1 truncate text-sm text-slate-600">{draft.subject || t('noSubject')}</p>
-            <p className="mt-1 truncate text-xs text-slate-400">{draft.body || t('emptyDraft')}</p>
+            {t('openDraft')}
           </button>
-        </li>
-      ))}
-    </ul>
+          <button
+            role="menuitem"
+            onClick={() => {
+              if (window.confirm(t('discardDraftConfirm'))) onDelete(contextMenu.draft);
+              setContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-rose-600 transition-colors hover:bg-rose-50"
+          >
+            {t('discard')}
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -308,10 +442,11 @@ interface ChatPanelProps {
   onFavouriteToggle: (next: boolean) => void;
   onComposeTraditional: (lockedPhone: string) => void;
   onRead: () => void;
+  onConversationUpdate: () => Promise<void>;
   onSaveNickname: (phone: string, nickname: string) => Promise<void>;
 }
 
-function ChatPanel({ conversation, folder, onBack, onFavouriteToggle, onComposeTraditional, onRead, onSaveNickname }: ChatPanelProps) {
+function ChatPanel({ conversation, folder, onBack, onFavouriteToggle, onComposeTraditional, onRead, onConversationUpdate, onSaveNickname }: ChatPanelProps) {
   const { t } = useLanguage();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -379,7 +514,14 @@ function ChatPanel({ conversation, folder, onBack, onFavouriteToggle, onComposeT
     return (
       <ExpandedEmailView
         message={openedMessage}
-        senderName={openedMessage.direction === 'in' ? conversation.title : t('you')}
+        senderName={openedMessage.direction === 'out'
+          ? t('you')
+          : openedMessage.isGroup
+            ? conversation.participants.find((participant) => participant.phone === openedMessage.fromPhone)?.nickname
+              || conversation.participants.find((participant) => participant.phone === openedMessage.fromPhone)?.name
+              || openedMessage.senderName
+              || conversation.title
+            : conversation.title}
         onBack={() => setOpenedMessage(null)}
         onReply={(m) => {
           setOpenedMessage(null);
@@ -398,6 +540,7 @@ function ChatPanel({ conversation, folder, onBack, onFavouriteToggle, onComposeT
           onClose={() => setShowConversationProfile(false)}
           onSave={async (patch) => {
             await updateConversation(conversation.id, patch);
+            await onConversationUpdate();
           }}
           onSaveNickname={async (nickname) => {
             const contactPhone = conversation.participants[0]?.phone;

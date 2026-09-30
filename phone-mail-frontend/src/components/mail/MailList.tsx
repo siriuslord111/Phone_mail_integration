@@ -23,7 +23,9 @@ interface MailListProps {
   onOpen: (conversation: Conversation) => void;
   onConversationAction: (conversation: Conversation, action: ConversationAction) => void;
   canMoveToSpam: boolean;
+  canRestore: boolean;
   canDeleteConversation: boolean;
+  canDeletePermanently: boolean;
   actionError?: string;
   search: string;
 }
@@ -37,7 +39,9 @@ export function MailList({
   onOpen,
   onConversationAction,
   canMoveToSpam,
+  canRestore,
   canDeleteConversation,
+  canDeletePermanently,
   actionError,
   search,
 }: MailListProps) {
@@ -142,9 +146,9 @@ export function MailList({
         ) : conversations.length === 0 ? (
           <EmptyState search={search} filter={filter} />
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <ul>
             {conversations.map((c) => (
-              <li key={c.id}>
+              <li key={c.id} className="border-b border-slate-100 last:border-b-0">
                 <button
                   onClick={() => onOpen(c)}
                   onContextMenu={(event) => {
@@ -210,7 +214,10 @@ export function MailList({
           ) : (
             <ContextMenuItem icon={<Mail className="size-4" />} label={t('markAsUnread')} onClick={() => runContextAction('markUnread')} />
           )}
-          {canMoveToSpam && !contextMenu.conversation.isGroup && (
+          {canRestore && (
+            <ContextMenuItem icon={<ShieldAlert className="size-4" />} label={t('moveToInbox')} onClick={() => runContextAction('restore')} />
+          )}
+          {canMoveToSpam && (
             <ContextMenuItem icon={<ShieldAlert className="size-4" />} label={t('moveToSpam')} onClick={() => runContextAction('spam')} />
           )}
           {canDeleteConversation && (
@@ -219,6 +226,14 @@ export function MailList({
               icon={<Trash2 className="size-4" />}
               label={t(contextMenu.conversation.isGroup ? 'deleteForMe' : 'deleteConversation')}
               onClick={() => runContextAction('delete')}
+            />
+          )}
+          {canDeletePermanently && (
+            <ContextMenuItem
+              destructive
+              icon={<Trash2 className="size-4" />}
+              label={t('deletePermanently')}
+              onClick={() => runContextAction('deletePermanently')}
             />
           )}
         </div>
@@ -250,8 +265,10 @@ function ContextMenuItem({ icon, label, onClick, destructive = false }: {
 function Avatar({ conversation }: { conversation: Conversation }) {
   if (conversation.isGroup) {
     return (
-      <span className="grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-sm">
-        <Users className="size-5" />
+      <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-sm">
+        {conversation.avatarUrl
+          ? <img src={conversation.avatarUrl} alt="" className="size-full object-cover" />
+          : <Users className="size-5" />}
       </span>
     );
   }

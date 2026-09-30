@@ -168,6 +168,7 @@ model GroupChatMember {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   lastReadAt  DateTime?
   isFavourite Boolean   @default(false)
+  isSpam      Boolean   @default(false)
 
   @@unique([groupChatId, userId])
   @@index([userId, groupChatId])

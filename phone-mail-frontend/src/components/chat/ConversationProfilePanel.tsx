@@ -1,7 +1,7 @@
 import { ArrowLeft, Camera, FileText, Image, Link2, PlaySquare, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Attachment, Conversation, Message } from '../../types';
-import { getInitials, avatarColor } from '../../utils/formatters';
+import { getInitials, getContactInitials, avatarColor } from '../../utils/formatters';
 import { useLanguage } from '../../context/LanguageProvider';
 import { SharedFileActions } from '../common/SharedFileActions';
 
@@ -25,10 +25,10 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   const [nickname, setNickname] = useState(conversation.nickname ?? '');
   const [description, setDescription] = useState(conversation.description ?? conversation.participants[0]?.bio ?? '');
   const [avatarUrl, setAvatarUrl] = useState(conversation.avatarUrl ?? conversation.participants[0]?.avatarUrl ?? '');
+  const [savedNickname, setSavedNickname] = useState(conversation.nickname ?? '');
   const [photoOpen, setPhotoOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nicknameSaving, setNicknameSaving] = useState(false);
-  const [nicknameSaved, setNicknameSaved] = useState(false);
   const [nicknameError, setNicknameError] = useState('');
   const [sharedCategory, setSharedCategory] = useState<SharedCategory | null>(null);
   const sharedItems = useMemo(() => {
@@ -77,16 +77,20 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
   const saveNickname = async () => {
     setNicknameSaving(true);
     setNicknameError('');
-    setNicknameSaved(false);
     try {
       await onSaveNickname(nickname.trim());
-      setNicknameSaved(true);
+      setSavedNickname(nickname.trim());
     } catch (error) {
       setNicknameError(error instanceof Error ? error.message : t('couldNotSaveNickname'));
     } finally {
       setNicknameSaving(false);
     }
   };
+
+  const groupDetailsChanged = (title.trim() || conversation.title) !== conversation.title
+    || description.trim() !== (conversation.description ?? conversation.participants[0]?.bio ?? '').trim()
+    || avatarUrl !== (conversation.avatarUrl ?? conversation.participants[0]?.avatarUrl ?? '');
+  const nicknameChanged = nickname.trim() !== savedNickname.trim();
 
   return (
     <div role="dialog" aria-modal="true" className="absolute inset-0 z-30 flex flex-col overflow-y-auto bg-slate-50">
@@ -131,8 +135,14 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
         </div>
         {conversation.isGroup ? (
           <div className="mx-auto mt-4 max-w-sm space-y-2 text-left">
-            <input value={title} onChange={(event) => setTitle(event.target.value)} className="w-full rounded-xl bg-slate-50 px-3 py-2 text-center font-semibold outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" aria-label={t('groupName')} />
-            <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t('groupDescriptionPlaceholder')} className="w-full rounded-xl bg-slate-50 px-3 py-2 text-center text-sm outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" aria-label={t('description')} />
+            <label className="flex items-center gap-3 text-sm font-medium text-slate-600">
+              <span className="w-24 shrink-0">{t('groupName')}:</span>
+              <input value={title} onChange={(event) => setTitle(event.target.value)} className="min-w-0 flex-1 rounded-xl bg-slate-50 px-3 py-2 text-left font-semibold text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" aria-label={t('groupName')} />
+            </label>
+            <label className="flex items-center gap-3 text-sm font-medium text-slate-600">
+              <span className="w-24 shrink-0">{t('description')}:</span>
+              <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t('groupDescriptionPlaceholder')} className="min-w-0 flex-1 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" aria-label={t('description')} />
+            </label>
           </div>
         ) : (
           <>
@@ -143,20 +153,22 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
               <div className="mt-1 flex gap-2">
                 <input
                   value={nickname}
-                  onChange={(event) => { setNickname(event.target.value); setNicknameSaved(false); }}
+                  onChange={(event) => setNickname(event.target.value)}
                   maxLength={100}
                   placeholder={conversation.actualName || t('save')}
                   className="min-w-0 flex-1 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]"
                   aria-label={t('privateNickname')}
                 />
-                <button
-                  type="button"
-                  onClick={() => void saveNickname()}
-                  disabled={nicknameSaving}
-                  className="shrink-0 rounded-xl bg-[#1a66ff] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
-                >
-                  {nicknameSaving ? t('saving') : nicknameSaved ? t('nicknameSaved') : t('save')}
-                </button>
+                {nicknameChanged && (
+                  <button
+                    type="button"
+                    onClick={() => void saveNickname()}
+                    disabled={nicknameSaving}
+                    className="shrink-0 rounded-xl bg-[#1a66ff] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    {nicknameSaving ? t('saving') : t('save')}
+                  </button>
+                )}
               </div>
             </label>
             {nicknameError && <p role="alert" className="mt-2 text-xs text-rose-600">{nicknameError}</p>}
@@ -172,12 +184,27 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
             <h3 className="font-semibold text-slate-800">{conversation.participants.length} {t('groupParticipants')}</h3>
           </div>
           <div className="space-y-2">
-            {conversation.participants.map((member) => (
-              <div key={member.phone} className="flex items-center gap-3 rounded-xl px-2 py-2">
-                <span className="grid size-9 place-items-center rounded-full bg-blue-100 text-xs font-semibold text-[#1a66ff]">{getInitials(member.name)}</span>
-                <span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-700">{member.name}</strong><small className="text-xs text-slate-400">{member.phone}</small></span>
-              </div>
-            ))}
+            {conversation.participants.map((member) => {
+              const displayName = member.nickname || member.name;
+              const secondaryName = member.nickname && member.nickname !== member.name
+                ? `${member.name} · ${member.phone}`
+                : member.phone;
+              return (
+                <div key={member.phone} className="flex items-center gap-3 rounded-xl px-2 py-2">
+                  <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-blue-100 text-xs font-semibold text-[#1a66ff]">
+                    {member.avatarUrl
+                      ? <img src={member.avatarUrl} alt="" className="size-full object-cover" />
+                      : /^\+?\d+$/.test(member.phone)
+                        ? getContactInitials(member.phone)
+                        : getInitials(displayName)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm text-slate-700">{displayName}</strong>
+                    <small className="block truncate text-xs text-slate-400">{secondaryName}</small>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -219,7 +246,7 @@ export function ConversationProfilePanel({ conversation, messages, onClose, onSa
         )}
       </section>
 
-      {conversation.isGroup && <button disabled={saving} onClick={save} className="m-4 rounded-xl bg-[#1a66ff] py-3 font-semibold text-white disabled:opacity-60">{saving ? t('saving') : t('saveGroupChanges')}</button>}
+      {conversation.isGroup && groupDetailsChanged && <button disabled={saving} onClick={save} className="m-4 rounded-xl bg-[#1a66ff] py-3 font-semibold text-white disabled:opacity-60">{saving ? t('saving') : t('saveGroupChanges')}</button>}
       <button onClick={onClose} aria-label={t('closeProfile')} className="absolute right-3 top-3 grid size-8 place-items-center rounded-full text-slate-400 hover:bg-slate-100"><X className="size-4" /></button>
       {photoOpen && avatarUrl && (
         <div

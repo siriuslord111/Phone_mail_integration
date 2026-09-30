@@ -18,6 +18,15 @@ function normalizeLockedRecipient(recipient: string) {
   return normalizePhone(value.replace(/@phonemail\.com$/i, ''));
 }
 
+function draftSnapshot(recipients: string[], subject: string, body: string, files: File[]) {
+  return JSON.stringify({
+    recipients,
+    subject,
+    body,
+    files: files.map(({ name, size, type, lastModified }) => ({ name, size, type, lastModified })),
+  });
+}
+
 interface ComposeModalProps {
   lockedTo?: string;
   draftId?: string;
@@ -37,8 +46,13 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
   const [error, setError] = useState('');
   const [activeDraftId, setActiveDraftId] = useState(draftId);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [savedDraftSnapshot, setSavedDraftSnapshot] = useState<string | null>(() =>
+    draftId ? null : draftSnapshot(lockedTo ? [normalizeLockedRecipient(lockedTo)] : [], '', '', []),
+  );
   const closeAndSaveRef = useRef<() => Promise<void>>(async () => {});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftChanged = savedDraftSnapshot !== null
+    && draftSnapshot(to, subject, body, files) !== savedDraftSnapshot;
 
   useEffect(() => {
     if (!draftId) return;
@@ -53,7 +67,10 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
       const restoredFiles = await Promise.all((draft.attachments ?? []).map((attachment) =>
         getDraftAttachment(draft.id, attachment.id, attachment.name, attachment.mimeType),
       ));
-      if (!cancelled) setFiles(restoredFiles);
+      if (!cancelled) {
+        setFiles(restoredFiles);
+        setSavedDraftSnapshot(draftSnapshot(draft.recipients, draft.subject, draft.body, restoredFiles));
+      }
     }).catch((loadError) => {
       if (!cancelled) setError(getErrorMessage(loadError, t('couldNotLoadDraft')));
     });
@@ -73,6 +90,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
         files,
       });
       setActiveDraftId(draft.id);
+      setSavedDraftSnapshot(draftSnapshot(to, subject, body, files));
       return draft;
     } catch (saveError) {
       setError(getErrorMessage(saveError, t('couldNotSaveDraft')));
@@ -83,7 +101,7 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
   };
 
   const closeAndSave = async () => {
-    if (await persistDraft() || (to.length === 0 && !subject.trim() && !body.trim() && files.length === 0)) onClose();
+    if (!draftChanged || await persistDraft()) onClose();
   };
   closeAndSaveRef.current = closeAndSave;
 
@@ -310,13 +328,15 @@ export function ComposeModal({ lockedTo, draftId, onClose, onSent }: ComposeModa
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              disabled={savingDraft || sending}
-              onClick={() => { void persistDraft(); }}
-              variant="secondary"
-            >
-              {t('saveDraft')}
-            </Button>
+            {draftChanged && (
+              <Button
+                disabled={savingDraft || sending}
+                onClick={() => { void persistDraft(); }}
+                variant="secondary"
+              >
+                {t('saveDraft')}
+              </Button>
+            )}
             <Button loading={sending} onClick={handleSend}>{t('send')}</Button>
           </div>
         </footer>

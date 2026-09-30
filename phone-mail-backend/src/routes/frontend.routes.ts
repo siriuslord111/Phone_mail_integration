@@ -393,6 +393,7 @@ async function listConversations(req: Request, res: Response) {
       const profile = profileByPhone.get(peer);
       return !query
         || peer.includes(query)
+        || nicknames.get(peer)?.toLowerCase().includes(query)
         || profile?.name?.toLowerCase().includes(query)
         || profile?.bio?.toLowerCase().includes(query)
         || list.some((message) => `${message.subject} ${message.body}`.toLowerCase().includes(query));
@@ -440,6 +441,10 @@ async function listConversations(req: Request, res: Response) {
         },
       },
     });
+    const groupMemberPhones = memberships.flatMap(({ groupChat }) =>
+      groupChat.members.map(({ user: member }) => member.phoneNumber),
+    );
+    const groupNicknames = await getContactNicknames(user.id, groupMemberPhones);
     for (const membership of memberships) {
       const group = membership.groupChat;
       const groupMessages = await prisma.groupChatMessage.findMany({
@@ -462,16 +467,19 @@ async function listConversations(req: Request, res: Response) {
       const visibleMessages = groupMessages.filter((message) =>
         !deletedMessageIds.has(message.id) &&
           (folder === 'inbox'
-            ? true
+            ? !membership.isSpam
             : folder === 'sent'
-              ? message.senderId === user.id
-              : false),
+              ? !membership.isSpam && message.senderId === user.id
+              : folder === 'spam'
+                ? membership.isSpam
+                : false),
       );
       if (visibleMessages.length === 0) continue;
       const last = visibleMessages[visibleMessages.length - 1];
       const participants = group.members.map(({ user: member }) => ({
         phone: member.phoneNumber,
         name: member.name || member.phoneNumber,
+        nickname: groupNicknames.get(member.phoneNumber),
         avatarUrl: member.profilePic ?? undefined,
         bio: member.bio ?? undefined,
       }));
@@ -1113,7 +1121,7 @@ router.delete('/drafts/:id', (req, res, next) => {
 
 router.patch('/conversations/:id/actions', async (req, res, next) => {
   const action = req.body?.action;
-  if (!['delete', 'markRead', 'markUnread', 'spam'].includes(action)) {
+  if (!['delete', 'deletePermanently', 'markRead', 'markUnread', 'spam', 'restore'].includes(action)) {
     return res.status(400).json({ message: 'Unsupported conversation action.' });
   }
   const conversationId = req.params.id;
@@ -1121,13 +1129,34 @@ router.patch('/conversations/:id/actions', async (req, res, next) => {
   try {
     if (conversationId.startsWith(GROUP_CONVERSATION_PREFIX)) {
       if (memoryStoreEnabled) return res.status(503).json({ message: 'Group conversations require persistent storage.' });
-      if (action === 'spam') return res.status(400).json({ message: 'Moving group conversations to spam is not supported.' });
       const groupId = conversationId.slice(GROUP_CONVERSATION_PREFIX.length);
       const membership = await prisma.groupChatMember.findFirst({
         where: { groupChatId: groupId, userId: user.id },
         select: { id: true },
       });
       if (!membership) return res.status(404).json({ message: 'Group conversation not found.' });
+      if (action === 'spam' || action === 'restore') {
+        await prisma.groupChatMember.update({
+          where: { id: membership.id },
+          data: { isSpam: action === 'spam' },
+        });
+        return res.json({ success: true });
+      }
+      if (action === 'deletePermanently') {
+        const groupMessages = await prisma.groupChatMessage.findMany({
+          where: { groupChatId: groupId },
+          select: { id: true },
+        });
+        await prisma.groupChatMessageDeletion.createMany({
+          data: groupMessages.map(({ id }) => ({ messageId: id, userId: user.id })),
+          skipDuplicates: true,
+        });
+        await prisma.groupChatMember.update({
+          where: { id: membership.id },
+          data: { isSpam: false },
+        });
+        return res.json({ success: true });
+      }
       if (action === 'delete') {
         const groupMessages = await prisma.groupChatMessage.findMany({
           where: { groupChatId: groupId },
@@ -1151,8 +1180,13 @@ router.patch('/conversations/:id/actions', async (req, res, next) => {
       ? [peer, `${peer.replace(/@phonemail\.com$/, '')}@phonemail.com`]
       : [peer];
     if (!memoryStoreEnabled) {
-      if (action === 'delete' || action === 'spam') {
-        const mailbox = action === 'delete' ? 'trash' : 'spam';
+      if (action === 'deletePermanently') {
+        await Promise.all([
+          prisma.inboundEmail.deleteMany({ where: { userId: user.id, fromAddress: { in: peerAddresses } } }),
+          prisma.mailMessage.deleteMany({ where: { userId: user.id, peerAddress: { in: peerAddresses } } }),
+        ]);
+      } else if (action === 'delete' || action === 'spam' || action === 'restore') {
+        const mailbox = action === 'delete' ? 'trash' : action === 'spam' ? 'spam' : 'inbox';
         await Promise.all([
           prisma.inboundEmail.updateMany({ where: { userId: user.id, fromAddress: { in: peerAddresses } }, data: { mailbox } }),
           prisma.mailMessage.updateMany({ where: { userId: user.id, peerAddress: { in: peerAddresses } }, data: { mailbox } }),
@@ -1165,10 +1199,13 @@ router.patch('/conversations/:id/actions', async (req, res, next) => {
         ]);
       }
     }
-    for (const message of messages) {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index];
       if (!isMessageForUser(message, user.phoneNumber, user.email) || peerForMessage(message, user.phoneNumber) !== peer) continue;
       if (action === 'delete') message.mailbox = 'trash';
       else if (action === 'spam') message.mailbox = 'spam';
+      else if (action === 'restore') message.mailbox = 'inbox';
+      else if (action === 'deletePermanently') messages.splice(index, 1);
       else if (message.from !== user.phoneNumber) message.read = action === 'markRead';
     }
     return res.json({ success: true });

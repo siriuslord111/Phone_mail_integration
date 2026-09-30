@@ -251,6 +251,17 @@ test('password registration requires a valid OTP before creating an account', as
   assert.ok(recipientContact);
   assert.equal(recipientContact.title, privateNickname);
   assert.equal(recipientContact.nickname, privateNickname);
+  const nicknameSearchResponse = await fetch(
+    `${baseUrl}/api/conversations?q=${encodeURIComponent('PRIVATE CONTACT')}`,
+    { headers: { authorization: `Bearer ${recipient.token}` } },
+  );
+  assert.equal(nicknameSearchResponse.status, 200);
+  const nicknameSearch = await nicknameSearchResponse.json() as {
+    conversations: Array<{ title: string; nickname: string }>;
+  };
+  assert.ok(nicknameSearch.conversations.some((item) => (
+    item.title === privateNickname && item.nickname === privateNickname
+  )));
   const ownerConversationsResponse = await fetch(`${baseUrl}/api/conversations`, {
     headers: { authorization: `Bearer ${registrationResult.token}` },
   });
@@ -314,7 +325,7 @@ test('shared content requires authentication and avoids reporting unstored files
   assert.deepEqual(await response.json(), { attachments: [] });
 });
 
-test('conversation actions toggle read status and move messages to recoverable trash', async () => {
+test('conversation actions support spam, recoverable trash, and permanent deletion', async () => {
   const phone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
   const peerPhone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
   const otp = seedRegistrationOtp(phone).otp;
@@ -341,7 +352,7 @@ test('conversation actions toggle read status and move messages to recoverable t
       headers: { authorization: `Bearer ${registration.token}` },
     });
     const conversations = await conversationsResponse.json() as { conversations: Array<{ id: string }> };
-    const conversation = conversations.conversations.find((item) => item.id !== undefined);
+    const conversation = conversations.conversations.find((item) => item.id === `conversation-${peerPhone}`);
     assert.ok(conversation);
 
     const applyAction = async (action: string) => fetch(`${baseUrl}/api/conversations/${encodeURIComponent(conversation.id)}/actions`, {
@@ -357,6 +368,22 @@ test('conversation actions toggle read status and move messages to recoverable t
     assert.equal(message.read, true);
     assert.equal((await applyAction('markUnread')).status, 200);
     assert.equal(message.read, false);
+    assert.equal((await applyAction('spam')).status, 200);
+    assert.equal(message.mailbox, 'spam');
+
+    const spamResponse = await fetch(`${baseUrl}/api/conversations?folder=spam`, {
+      headers: { authorization: `Bearer ${registration.token}` },
+    });
+    const spam = await spamResponse.json() as { conversations: Array<{ id: string }> };
+    assert.equal(spam.conversations.some((item) => item.id === conversation.id), true);
+    const inboxAfterSpamResponse = await fetch(`${baseUrl}/api/conversations?folder=inbox`, {
+      headers: { authorization: `Bearer ${registration.token}` },
+    });
+    const inboxAfterSpam = await inboxAfterSpamResponse.json() as { conversations: Array<{ id: string }> };
+    assert.equal(inboxAfterSpam.conversations.some((item) => item.id === conversation.id), false);
+    assert.equal((await applyAction('restore')).status, 200);
+    assert.equal(message.mailbox, 'inbox');
+
     assert.equal((await applyAction('delete')).status, 200);
     assert.equal(message.mailbox, 'trash');
 
@@ -370,7 +397,15 @@ test('conversation actions toggle read status and move messages to recoverable t
     });
     const trash = await trashResponse.json() as { conversations: Array<{ id: string }> };
     assert.equal(trash.conversations.some((item) => item.id === conversation.id), true);
+    assert.equal((await applyAction('deletePermanently')).status, 200);
+    assert.equal(messages.includes(message), false);
+    const trashAfterPermanentDeleteResponse = await fetch(`${baseUrl}/api/conversations?folder=trash`, {
+      headers: { authorization: `Bearer ${registration.token}` },
+    });
+    const trashAfterPermanentDelete = await trashAfterPermanentDeleteResponse.json() as { conversations: Array<{ id: string }> };
+    assert.equal(trashAfterPermanentDelete.conversations.some((item) => item.id === conversation.id), false);
   } finally {
-    messages.splice(messages.indexOf(message), 1);
+    const messageIndex = messages.indexOf(message);
+    if (messageIndex >= 0) messages.splice(messageIndex, 1);
   }
 });

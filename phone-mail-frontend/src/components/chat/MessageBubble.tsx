@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type TouchEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type TouchEvent } from 'react';
 import { Copy, EllipsisVertical, Flag, MailOpen, Paperclip, Reply, Star, Trash2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { formatBytes, formatClock } from '../../utils/formatters';
 import { SharedFileActions } from '../common/SharedFileActions';
@@ -10,7 +11,7 @@ interface MessageBubbleProps {
   message: Message;
   /** Swipe-right → "tag this message" (reply). Only offered once per message. */
   onSwipeReply?: (message: Message) => void;
-  /** Tap a long message to open it in the traditional full-email view. */
+  /** Tap a long or group message to open it in the full-message view. */
   onOpenFull?: (message: Message) => void;
   onAction?: (message: Message, action: 'star' | 'spam' | 'trash' | 'restore' | 'delete' | 'markRead') => void;
 }
@@ -23,16 +24,23 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
   const [dragX, setDragX] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const isOut = message.direction === 'out';
   const canSwipe = Boolean(onSwipeReply) && message.direction === 'in' && !message.replied;
   const isLong = message.body.length > LONG_MESSAGE_CHARS;
-  const canOpenFull = Boolean(onOpenFull) && (isLong || Boolean(message.mailbox));
+  const canOpenFull = Boolean(onOpenFull) && (message.isGroup || isLong || Boolean(message.mailbox));
 
   useEffect(() => {
     if (!menuOpen) return;
     const closeMenu = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+      if (
+        !menuRef.current?.contains(event.target as Node)
+        && !menuButtonRef.current?.contains(event.target as Node)
+      ) {
+        setMenuOpen(false);
+      }
     };
     const closeMenuOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -46,6 +54,22 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
       document.removeEventListener('mousedown', closeMenu);
       document.removeEventListener('keydown', closeMenuOnEscape);
     };
+  }, [menuOpen]);
+
+  useLayoutEffect(() => {
+    if (!menuOpen || !menuButtonRef.current || !menuRef.current) return;
+    const anchor = menuButtonRef.current.getBoundingClientRect();
+    const menu = menuRef.current.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.min(
+      Math.max(margin, anchor.right - menu.width),
+      window.innerWidth - menu.width - margin,
+    );
+    const below = anchor.bottom + 4;
+    const top = below + menu.height <= window.innerHeight - margin
+      ? below
+      : Math.max(margin, anchor.top - menu.height - 4);
+    setMenuPosition({ left, top });
   }, [menuOpen]);
 
   const handleTouchStart = (e: TouchEvent) => {
@@ -108,10 +132,10 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
         )}
       >
         {message.isGroup && !isOut && message.senderName && (
-          <p className="mb-1 text-xs font-semibold text-[#1a66ff]">{message.senderName}</p>
+          <p className="mb-1 text-sm font-semibold text-[#1a66ff]">{message.senderName}</p>
         )}
         {/* new-email subject header */}
-        {(message.subject || message.mailbox) && !message.isReply && (
+        {(message.isGroup || message.subject || message.mailbox) && !message.isReply && (
           <p
             className={cn(
               'mb-1 text-[11px] font-semibold uppercase tracking-wide',
@@ -174,6 +198,7 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
       {onAction && (
         <div ref={menuRef} className="relative self-start">
           <button
+            ref={menuButtonRef}
             type="button"
             aria-label={t('messageActions')}
             onClick={() => setMenuOpen((open) => !open)}
@@ -181,14 +206,19 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
           >
             <EllipsisVertical className="size-4" />
           </button>
-          {menuOpen && (
-            <div className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-xl bg-white p-1 text-left text-xs text-slate-700 shadow-xl ring-1 ring-slate-200">
+          {menuOpen && createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              className="fixed z-[60] w-44 overflow-hidden rounded-xl bg-white p-1 text-left text-xs text-slate-700 shadow-xl ring-1 ring-slate-200"
+              style={menuPosition}
+            >
               {message.direction === 'in' && !message.replied && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onSwipeReply?.(message); }}>
                   <Reply className="size-3.5" /> {t('reply')}
                 </button>
               )}
-              {!message.isGroup && onOpenFull && (
+              {onOpenFull && (
                 <button className="menu-action" onClick={() => { setMenuOpen(false); onOpenFull(message); }}>
                   <MailOpen className="size-3.5" /> {t('openFullEmail')}
                 </button>
@@ -222,7 +252,8 @@ export function MessageBubble({ message, onSwipeReply, onOpenFull, onAction }: M
                   <Trash2 className="size-3.5" /> {t('deletePermanently')}
                 </button>
               )}
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
       )}

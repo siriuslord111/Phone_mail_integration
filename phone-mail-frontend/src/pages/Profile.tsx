@@ -6,18 +6,30 @@ import { listSharedContent, type SharedContentItem } from '../api/email.api';
 import { getErrorMessage } from '../api/axios';
 import { SharedFileActions } from '../components/common/SharedFileActions';
 
+type SharedCategory = 'photos' | 'files' | 'links' | 'media';
+
+const PHOTO_EXTENSIONS = /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i;
+const MEDIA_EXTENSIONS = /\.(aac|flac|m4a|mkv|mov|mp3|mp4|ogg|wav|webm)$/i;
+
+function getSharedCategory(file: SharedContentItem): Exclude<SharedCategory, 'links'> {
+  const mimeType = file.mimeType?.toLowerCase() ?? '';
+  if (mimeType.startsWith('image/') || PHOTO_EXTENSIONS.test(file.name)) return 'photos';
+  if (mimeType.startsWith('audio/') || mimeType.startsWith('video/') || MEDIA_EXTENSIONS.test(file.name)) return 'media';
+  return 'files';
+}
+
 export default function Profile() {
   const { user, saveProfile } = useAuth();
   const { t } = useLanguage();
   const [name, setName] = useState(user?.name || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
-  const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [sharedFiles, setSharedFiles] = useState<SharedContentItem[]>([]);
   const [sharedLoading, setSharedLoading] = useState(true);
   const [sharedError, setSharedError] = useState('');
+  const [sharedCategory, setSharedCategory] = useState<SharedCategory | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -58,7 +70,6 @@ export default function Profile() {
       if (typeof reader.result === 'string') {
         setAvatarUrl(reader.result);
         setError('');
-        setSaved(false);
       } else {
         setError(t('couldNotReadPhoto'));
       }
@@ -70,17 +81,30 @@ export default function Profile() {
   const save = async () => {
     setSaving(true);
     setError('');
-    setSaved(false);
     try {
       await saveProfile({ name: name.trim(), bio: bio.trim(), avatarUrl });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1800);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : t('couldNotSaveProfile'));
     } finally {
       setSaving(false);
     }
   };
+
+  const profileChanged = name.trim() !== (user?.name || '').trim()
+    || bio.trim() !== (user?.bio || '').trim()
+    || avatarUrl !== (user?.avatarUrl || '');
+  const photoFiles = sharedFiles.filter((file) => getSharedCategory(file) === 'photos');
+  const mediaFiles = sharedFiles.filter((file) => getSharedCategory(file) === 'media');
+  const otherFiles = sharedFiles.filter((file) => getSharedCategory(file) === 'files');
+  const visibleFiles = sharedCategory === null
+    ? sharedFiles
+    : sharedCategory === 'photos'
+      ? photoFiles
+      : sharedCategory === 'files'
+        ? otherFiles
+        : sharedCategory === 'media'
+          ? mediaFiles
+          : [];
 
   return (
     <div className="mx-auto max-w-2xl p-5 md:p-8">
@@ -111,24 +135,24 @@ export default function Profile() {
         <label className="block text-sm font-medium text-slate-600">{t('name')}<input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} className="mt-1 w-full rounded-xl bg-slate-50 px-3 py-2.5 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" /></label>
         <label className="block text-sm font-medium text-slate-600">{t('description')}<input value={bio} onChange={(e) => setBio(e.target.value)} maxLength={500} placeholder={t('availableForMessages')} className="mt-1 w-full rounded-xl bg-slate-50 px-3 py-2.5 outline-none ring-1 ring-slate-200 focus:ring-[#1a66ff]" /></label>
         {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
-        {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(''); setSaved(false); }} className="inline-flex items-center gap-1 text-sm text-slate-500"><X className="size-4" /> {t('removeProfilePhoto')}</button>}
-        <button onClick={save} disabled={saving} className="rounded-xl bg-[#1a66ff] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? t('saving') : saved ? t('saved') : t('saveProfile')}</button>
+        {avatarUrl && <button type="button" onClick={() => setAvatarUrl('')} className="inline-flex items-center gap-1 text-sm text-slate-500"><X className="size-4" /> {t('removeProfilePhoto')}</button>}
+        {profileChanged && <button onClick={save} disabled={saving} className="rounded-xl bg-[#1a66ff] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? t('saving') : t('saveProfile')}</button>}
       </div>
       <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="mb-3 font-semibold text-slate-800">{t('sharedContent')}</h2>
         <div className="grid grid-cols-2 gap-2 text-center text-xs text-slate-500 sm:grid-cols-4">
-          <Shared icon={Image} label={t('photos')} count={sharedFiles.filter((file) => file.mimeType?.startsWith('image/')).length} />
-          <Shared icon={FileText} label={t('files')} count={sharedFiles.length} />
-          <Shared icon={Link2} label={t('links')} count={0} />
-          <Shared icon={PlaySquare} label={t('media')} count={sharedFiles.filter((file) => file.mimeType?.startsWith('audio/') || file.mimeType?.startsWith('video/')).length} />
+          <Shared icon={Image} label={t('photos')} count={photoFiles.length} active={sharedCategory === 'photos'} onClick={() => setSharedCategory('photos')} />
+          <Shared icon={FileText} label={t('files')} count={otherFiles.length} active={sharedCategory === 'files'} onClick={() => setSharedCategory('files')} />
+          <Shared icon={Link2} label={t('links')} count={0} active={sharedCategory === 'links'} onClick={() => setSharedCategory('links')} />
+          <Shared icon={PlaySquare} label={t('media')} count={mediaFiles.length} active={sharedCategory === 'media'} onClick={() => setSharedCategory('media')} />
         </div>
         {sharedLoading ? (
           <p className="mt-4 text-sm text-slate-400">{t('loadingSharedFiles')}</p>
         ) : sharedError ? (
           <p role="alert" className="mt-4 text-sm text-rose-600">{sharedError || t('couldNotLoadSharedFiles')}</p>
-        ) : sharedFiles.length ? (
+        ) : visibleFiles.length ? (
           <ul className="mt-4 divide-y divide-slate-100">
-            {sharedFiles.map((file) => (
+            {visibleFiles.map((file) => (
               <li key={file.id} className="flex min-w-0 items-center gap-2 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-700">{file.name}</p>
@@ -138,14 +162,34 @@ export default function Profile() {
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="mt-4 text-sm text-slate-400">{t('noSharedFiles')}</p>
-        )}
+        ) : sharedCategory !== null || sharedFiles.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-400">
+            {t(sharedCategory === null ? 'noSharedFiles' : 'noSharedItems')}
+          </p>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function Shared({ icon: Icon, label, count }: { icon: typeof Image; label: string; count: number }) {
-  return <div className="min-w-0 rounded-xl bg-slate-50 p-3"><Icon className="mx-auto mb-1 size-5 text-[#1a66ff]" /><span className="block break-words">{label} ({count})</span></div>;
+function Shared({ icon: Icon, label, count, active, onClick }: {
+  icon: typeof Image;
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`min-w-0 rounded-xl p-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a66ff] ${
+        active ? 'bg-blue-50 text-[#1a66ff]' : 'bg-slate-50 hover:bg-slate-100'
+      }`}
+    >
+      <Icon className="mx-auto mb-1 size-5 text-[#1a66ff]" />
+      <span className="block break-words">{label} ({count})</span>
+    </button>
+  );
 }
