@@ -1,3 +1,161 @@
+# PhoneMail
+
+PhoneMail is an email application that uses phone numbers as email identities.
+A user can receive mail at an address such as `9876543210@phonemail.com`, use
+the mobile-oriented conversation interface, or use the web client to compose
+and manage email.
+
+## Buildathon Summary
+
+PhoneMail was built for the ALPHASTACK 7-Day Buildathon. The implementation
+prioritizes the mobile experience and supports phone-based account creation,
+web authentication, local PhoneMail delivery, external SMTP delivery, inbox
+management, drafts, attachments, group conversations, spam/trash workflows,
+multilingual onboarding, and opt-in SMS notifications.
+
+### Technology Stack
+
+- **Frontend:** React 18, TypeScript, Vite, React Router, Tailwind CSS, and
+  `lucide-react` icons.
+- **Backend:** Node.js 20, TypeScript, Express, Socket.IO, Prisma, and
+  Argon2id password hashing.
+- **Data:** PostgreSQL 15 for users, mail, drafts, attachments, conversations,
+  and mailbox state. Short-lived OTP challenges remain in memory.
+- **Integrations:** Twilio Voice/SMS, 2Factor OTP SMS, SMTP via Nodemailer,
+  and Mailpit for local inbound-mail testing.
+- **Deployment:** Docker Compose with separate API, frontend, PostgreSQL, and
+  Mailpit services. Nginx serves the production frontend container.
+
+### Architecture
+
+```text
+Browser / mobile web UI
+        |
+        v
+React + Vite frontend :5173  ---- Socket.IO ----+
+        |                                        |
+        +------------ REST API :3000 ------------+
+                         |
+              Express routes and services
+                 |          |          |
+                 v          v          v
+             Prisma      Twilio      SMTP/Mailpit
+                 |
+                 v
+             PostgreSQL
+```
+
+The frontend owns onboarding, navigation, composition, conversations, profile
+settings, and localized UI state. The Express API owns authentication,
+authorization, recipient normalization, mail delivery, uploads, notifications,
+and Twilio webhooks. Prisma provides the persistence boundary and the API
+applies the schema with `prisma db push` before starting in Docker.
+
+### Account Creation Approach
+
+- **Phone call:** Twilio Voice presents an IVR menu. In normal mode, pressing
+  `1` starts a voice OTP challenge and the caller enters the code in the first
+  call. In Try Out Voice trial mode, where outbound calls are restricted,
+  pressing `1` creates the passwordless demo account immediately.
+- **Web/mobile UI:** Login and registration screens support phone OTP and a
+  password fallback. Login OTP requests are rejected before delivery when the
+  number has no account.
+- **Account identity:** The normalized phone number becomes the primary
+  PhoneMail address and is stored alongside the generated
+  `number@phonemail.com` email identity.
+
+## Quick Start
+
+### Prerequisites
+
+- Docker Desktop with Docker Compose
+- A modern browser
+- Optional provider credentials for real OTP, Voice, SMS, and SMTP delivery
+
+### Run the complete project
+
+From the repository root:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
+
+Open:
+
+- **PhoneMail frontend:** http://localhost:5173
+- **API:** http://localhost:3000
+- **Mailpit inbox:** http://localhost:8025
+
+Check service status with:
+
+```powershell
+docker compose ps
+docker compose logs -f api
+```
+
+Stop the stack with:
+
+```powershell
+docker compose down
+```
+
+PostgreSQL and Mailpit data are stored in Docker volumes and survive normal
+container restarts.
+
+## Configuration
+
+The root `.env` file is ignored by Git. Keep real credentials there and use
+`.env.example` as the tracked template. At minimum, set a stable
+`AUTH_TOKEN_SECRET` containing at least 32 bytes so sessions survive API
+restarts.
+
+### Provider configuration
+
+```env
+AUTH_TOKEN_SECRET=replace-with-at-least-32-random-bytes
+TWO_FACTOR_API_KEY=your-2factor-api-key
+TWO_FACTOR_OTP_TEMPLATE=your-approved-template
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_REGISTRATION_NUMBER=+18005550100
+TWILIO_WEBHOOK_BASE_URL=https://your-public-host.example/api/auth
+```
+
+For Twilio Try Out Voice testing, use:
+
+```env
+TWILIO_TRIAL_MODE=true
+TWILIO_TRIAL_WEBHOOK_KEY=private-random-key-at-least-32-bytes
+```
+
+The trial flow is intentionally OTP-free because Try Out Voice does not
+provide an owned outbound number. It is a demonstration path and should not be
+treated as production identity verification. Normal Twilio webhook requests
+are signature-validated; unsigned trial requests require the private trial
+key.
+
+For external email delivery, configure `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM`. For local inbound
+mail, Mailpit listens on SMTP port `1025` and its web inbox is on port `8025`.
+
+## Development and Validation
+
+The Docker build is the reproducible development check:
+
+```powershell
+docker compose build frontend api
+```
+
+The backend test suite can be run in the builder image:
+
+```powershell
+docker build --target builder -t phonemail-backend-test .\phone-mail-backend
+docker run --rm phonemail-backend-test npm test
+```
+
+The frontend production build runs as part of `docker compose build frontend`.
+
 ## SMS message notifications
 
 SMS notifications are opt-in and off by default. A signed-in user can enable
@@ -67,20 +225,24 @@ use.
 The 2Factor integration expects a valid account API key and an approved OTP SMS
 template; delivery cannot be tested until those credentials are supplied.
 Web registration, including password sign-up, and call-based registration
-create accounts only after a 2Factor OTP has been verified. Password sign-up
+create accounts only after their configured verification step. Password sign-up
 requests the OTP first, then creates the account after the code and password are
-submitted. Call registration uses Twilio Voice for the call and 2Factor for the
-SMS code; the caller enters that code using the phone keypad.
+submitted. Normal call registration uses Twilio Voice for the call and the
+caller enters the voice OTP using the phone keypad. Try Out Voice trial mode
+uses the documented immediate-create demo path because trial accounts cannot
+place the additional verification call.
 
 ## Toll-free phone registration
 
 The IVR (interactive voice response) flow is:
 
 1. A caller dials your Twilio toll-free number and presses **1**.
-2. PhoneMail sends a six-digit code to the caller ID phone number through 2Factor.
-3. The caller enters the code during the call. It expires after five minutes and
-   allows at most five attempts.
-4. PhoneMail creates the account only after the code is accepted.
+2. In normal mode, PhoneMail places a verification call and the caller enters
+  the six-digit code in the first call. It expires after five minutes and
+  allows at most five attempts.
+3. In Try Out Voice trial mode, PhoneMail creates the passwordless account
+  immediately after the caller presses **1**, because outbound verification
+  calls are unavailable on that plan.
 
 For local testing, configure a public HTTPS tunnel such as ngrok to forward to
 the API at `http://localhost:3000`. Twilio cannot call a `localhost` webhook
