@@ -1,5 +1,4 @@
 import { Outlet, useLocation } from 'react-router-dom';
-import { Smartphone } from 'lucide-react';
 import { useLanguage } from '../context/LanguageProvider';
 
 /**
@@ -19,9 +18,7 @@ export default function AuthLayout() {
           <span className="pointer-events-none absolute -bottom-16 -left-10 size-36 rounded-full bg-white/10" />
 
           <div className="relative flex items-center gap-2.5">
-            <span className="grid size-10 place-items-center rounded-xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-              <Smartphone className="size-5" strokeWidth={2.2} />
-            </span>
+            <span aria-hidden="true" className="brand-mark size-10 rounded-xl ring-1 ring-white/25" />
             <span className="font-serif text-2xl font-bold tracking-tight">
               Phone<span className="text-blue-200">Mail</span>
             </span>

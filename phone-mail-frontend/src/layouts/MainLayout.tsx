@@ -9,7 +9,6 @@ import {
   Search,
   Settings,
   ShieldAlert,
-  Smartphone,
   Trash2,
   X,
 } from 'lucide-react';
@@ -148,9 +147,7 @@ export default function MainLayout() {
               aria-label={t('inbox')}
               className="flex items-center gap-2.5 rounded-xl transition active:scale-95"
             >
-              <span className="grid size-9 place-items-center rounded-xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-                <Smartphone className="size-5" strokeWidth={2.2} />
-              </span>
+              <span aria-hidden="true" className="brand-mark size-9 rounded-xl ring-1 ring-white/25" />
               <span className="font-serif text-xl font-bold tracking-tight">
                 Phone<span className="text-blue-200">Mail</span>
               </span>
@@ -197,9 +194,7 @@ export default function MainLayout() {
             aria-label={t('inbox')}
             className="inline-flex items-center gap-2.5 rounded-xl transition active:scale-95"
           >
-            <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#1a66ff] to-[#4d8bff] shadow-md shadow-blue-500/30">
-              <Smartphone className="size-5 text-white" strokeWidth={2.2} />
-            </span>
+            <span aria-hidden="true" className="brand-mark size-9 rounded-xl shadow-md shadow-blue-500/30" />
             <span className="font-serif text-xl font-bold tracking-tight text-slate-900">
               Phone<span className="text-[#1a66ff]">Mail</span>
             </span>

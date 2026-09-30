@@ -227,6 +227,18 @@ body {
   display: none;
 }
 
+.brand-mark {
+  display: block;
+  flex: none;
+  background-image: url('/phonemail-icon-blue.svg');
+  background-position: center;
+  background-size: cover;
+}
+
+.dark .brand-mark {
+  background-image: url('/phonemail-icon-navy.svg');
+}
+
 /* ── Surfaces ─────────────────────────────────────────── */
 /* Keep the supplied artwork on the requested page and chat canvases. */
 .page-wallpaper {
