@@ -15,6 +15,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { useLanguage } from '../context/LanguageProvider';
 import { changePassword } from '../api/auth.api';
+import { getSmsNotificationsEnabled, setSmsNotificationsEnabled } from '../api/user.api';
 import { getErrorMessage } from '../api/axios';
 import { isLanguageCode, LANGUAGES, type TranslationKey } from '../utils/i18n';
 import { applyDarkMode } from '../utils/theme';
@@ -95,13 +96,43 @@ export default function Settings() {
   const navigate = useNavigate();
   const { language, setLanguage, t } = useLanguage();
   const option = OPTIONS.find((item) => item.id === section);
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false);
+  const [preferenceLoading, setPreferenceLoading] = useState(false);
+  const [preferenceSaving, setPreferenceSaving] = useState(false);
+  const [preferenceError, setPreferenceError] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [passwordStatus, setPasswordStatus] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+
+  const handlePreferenceChange = async (value: boolean) => {
+    if (!option) return;
+    const preferenceKey = PREFERENCE_KEYS[option.id];
+    if (!preferenceKey) return;
+
+    if (option.id !== 'notifications') {
+      setEnabled(value);
+      localStorage.setItem(preferenceKey, String(value));
+      if (option.id === 'appearance') applyDarkMode(value);
+      return;
+    }
+
+    const previousValue = enabled;
+    setPreferenceSaving(true);
+    setPreferenceError('');
+    try {
+      const savedValue = await setSmsNotificationsEnabled(value);
+      setEnabled(savedValue);
+      localStorage.setItem(preferenceKey, String(savedValue));
+    } catch (error) {
+      setEnabled(previousValue);
+      setPreferenceError(getErrorMessage(error, t('notificationSaveFailed')));
+    } finally {
+      setPreferenceSaving(false);
+    }
+  };
 
   const handlePasswordChange = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -141,10 +172,32 @@ export default function Settings() {
   }, [navigate, section]);
 
   useEffect(() => {
-    if (option && PREFERENCE_KEYS[option.id]) {
-      setEnabled(readPreference(PREFERENCE_KEYS[option.id], option.id === 'notifications'));
+    if (!option || !PREFERENCE_KEYS[option.id]) return;
+    if (option.id !== 'notifications') {
+      setEnabled(readPreference(PREFERENCE_KEYS[option.id], false));
+      setPreferenceError('');
+      return;
     }
-  }, [option]);
+
+    let active = true;
+    setPreferenceLoading(true);
+    setPreferenceError('');
+    void getSmsNotificationsEnabled()
+      .then((value) => {
+        if (!active) return;
+        setEnabled(value);
+        localStorage.setItem(PREFERENCE_KEYS.notifications, String(value));
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setEnabled(false);
+        setPreferenceError(getErrorMessage(error, t('notificationSaveFailed')));
+      })
+      .finally(() => {
+        if (active) setPreferenceLoading(false);
+      });
+    return () => { active = false; };
+  }, [option, t]);
 
   if (section) {
     if (!option) {
@@ -249,15 +302,14 @@ export default function Settings() {
               <input
                 type="checkbox"
                 checked={enabled}
-                onChange={(event) => {
-                  const value = event.target.checked;
-                  setEnabled(value);
-                  localStorage.setItem(preferenceKey, String(value));
-                  if (option.id === 'appearance') applyDarkMode(value);
-                }}
+                disabled={preferenceLoading || preferenceSaving}
+                onChange={(event) => { void handlePreferenceChange(event.target.checked); }}
                 className="size-5 accent-[#1a66ff]"
               />
             </label>
+          )}
+          {option.id === 'notifications' && preferenceError && (
+            <p role="alert" className="mt-3 text-sm text-rose-600">{preferenceError}</p>
           )}
         </section>
       </div>

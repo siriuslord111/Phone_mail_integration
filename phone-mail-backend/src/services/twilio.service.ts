@@ -2,6 +2,19 @@ import twilio from 'twilio';
 import { env } from '../config/env';
 
 export class TwilioService {
+  static messageNotificationBody(sender: string) {
+    return env.twilioTrialMode
+      ? 'sms_account_alerts'
+      : `New PhoneMail message from ${sender}. Open PhoneMail to read it.`;
+  }
+
+  static messageNotificationParameters(toPhone: string, sender: string) {
+    const body = TwilioService.messageNotificationBody(sender);
+    return env.twilioTrialMode
+      ? { body, from: env.twilioTrialPhoneNumber, to: toPhone }
+      : { body, from: env.twilioPhoneNumber, to: toPhone };
+  }
+
   static webhookUrl(path: string) {
     return `${env.twilioWebhookBaseUrl}${path}`;
   }
@@ -61,28 +74,32 @@ export class TwilioService {
     return response.toString();
   }
 
-  static async sendEmailNotificationSMS(toPhone: string, senderName: string, subject: string) {
-    const client = /^AC[a-zA-Z0-9]+$/.test(process.env.TWILIO_ACCOUNT_SID ?? '')
-      && process.env.TWILIO_AUTH_TOKEN
-      ? twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN)
+  static async sendMessageNotificationSMS(toPhone: string, sender: string) {
+    const client = /^AC[a-zA-Z0-9]+$/.test(env.twilioAccountSid)
+      && env.twilioAuthToken
+      ? twilio(env.twilioAccountSid, env.twilioAuthToken)
       : null;
-    const message = `You have received an email from ${senderName}. Subject: ${subject}.`;
-
     try {
-      if (!client || !process.env.TWILIO_PHONE_NUMBER) {
+      if (
+        !client ||
+        (env.twilioTrialMode && !env.twilioTrialPhoneNumber) ||
+        (!env.twilioTrialMode && (!env.twilioPhoneNumber || env.twilioPhoneNumber === '+15005550006'))
+      ) {
         console.warn('Notification SMS was not sent because Twilio is not configured.');
         return false;
       }
 
-      await client.messages.create({
-        body: message,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: toPhone,
-      });
+      await client.messages.create(TwilioService.messageNotificationParameters(toPhone, sender));
 
       return true;
-    } catch {
-      console.warn('Notification SMS delivery failed via Twilio.');
+    } catch (error) {
+      const providerError = error && typeof error === 'object'
+        ? error as { code?: unknown; status?: unknown }
+        : {};
+      console.warn('Notification SMS delivery failed via Twilio.', {
+        code: typeof providerError.code === 'number' ? providerError.code : undefined,
+        status: typeof providerError.status === 'number' ? providerError.status : undefined,
+      });
       return false;
     }
   }

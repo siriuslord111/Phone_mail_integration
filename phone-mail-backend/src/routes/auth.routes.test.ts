@@ -76,6 +76,38 @@ test('password registration hashes credentials and issues an authenticated sessi
   const login = await loginResponse.json() as { token: string };
   assert.ok(login.token);
 
+  const preferenceHeaders = {
+    authorization: `Bearer ${login.token}`,
+    'content-type': 'application/json',
+  };
+  const initialPreferencesResponse = await fetch(`${baseUrl}/api/user/preferences`, {
+    headers: { authorization: `Bearer ${login.token}` },
+  });
+  const initialPreferences = await initialPreferencesResponse.json() as { user: { smsNotificationsEnabled: boolean } };
+  assert.equal(initialPreferences.user.smsNotificationsEnabled, false);
+
+  const invalidPreferencesResponse = await fetch(`${baseUrl}/api/user/preferences`, {
+    method: 'PUT',
+    headers: preferenceHeaders,
+    body: JSON.stringify({ smsNotificationsEnabled: 'yes' }),
+  });
+  assert.equal(invalidPreferencesResponse.status, 400);
+
+  const enabledPreferencesResponse = await fetch(`${baseUrl}/api/user/preferences`, {
+    method: 'PUT',
+    headers: preferenceHeaders,
+    body: JSON.stringify({ smsNotificationsEnabled: true }),
+  });
+  assert.equal(enabledPreferencesResponse.status, 200);
+  const enabledPreferences = await enabledPreferencesResponse.json() as { user: { smsNotificationsEnabled: boolean } };
+  assert.equal(enabledPreferences.user.smsNotificationsEnabled, true);
+
+  const persistedPreferencesResponse = await fetch(`${baseUrl}/api/user/preferences`, {
+    headers: { authorization: `Bearer ${login.token}` },
+  });
+  const persistedPreferences = await persistedPreferencesResponse.json() as { user: { smsNotificationsEnabled: boolean } };
+  assert.equal(persistedPreferences.user.smsNotificationsEnabled, true);
+
   const rejectedPasswordChange = await fetch(`${baseUrl}/api/auth/change-password`, {
     method: 'POST',
     headers: {

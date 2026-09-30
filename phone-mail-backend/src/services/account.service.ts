@@ -18,6 +18,7 @@ function toAccount(user: PrismaUser): User {
     passwordHash: user.passwordHash ?? undefined,
     createdAt: user.createdAt.toISOString(),
     hasMobileApp: user.hasMobileApp,
+    smsNotificationsEnabled: user.smsNotificationsEnabled,
   };
 }
 
@@ -115,4 +116,14 @@ export async function updateAccountPassword(user: User, passwordHash: string): P
 
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
   user.passwordHash = passwordHash;
+}
+
+export async function updateSmsNotificationsEnabled(user: User, enabled: boolean): Promise<void> {
+  if (memoryStoreEnabled) {
+    user.smsNotificationsEnabled = enabled;
+    return;
+  }
+
+  await prisma.user.update({ where: { id: user.id }, data: { smsNotificationsEnabled: enabled } });
+  user.smsNotificationsEnabled = enabled;
 }

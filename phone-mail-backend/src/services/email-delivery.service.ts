@@ -4,7 +4,7 @@ import { prisma } from '../config/prisma';
 import type { User } from '../store';
 import { sendOutboundEmail } from './email.service';
 import { findAccountByEmail } from './account.service';
-import { TwilioService } from './twilio.service';
+import { notifyIncomingMessage } from './message-notification.service';
 
 export class UnknownPhoneMailRecipientError extends Error {
   constructor(address: string) {
@@ -130,15 +130,7 @@ export async function deliverEmail(input: {
     if (senderCopy) senderMessage = { id: senderCopy.id, replyToId: senderCopy.replyToId };
   }
 
-  await Promise.all(
-    localRecipients
-      .filter((recipient) => !recipient.hasMobileApp)
-      .map((recipient) => TwilioService.sendEmailNotificationSMS(
-        recipient.phoneNumber,
-        input.sender.phoneNumber,
-        input.subject,
-      )),
-  );
+  void notifyIncomingMessage(localRecipients, input.sender.phoneNumber);
 
   return {
     delivered: true,

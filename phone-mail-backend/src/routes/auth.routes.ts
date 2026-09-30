@@ -91,6 +91,22 @@ function twimlResponse(res: Response, status = 200) {
   res.status(status).type('text/xml');
 }
 
+function trialWebhookKeyMatches(req: Request) {
+  const expectedKey = env.twilioTrialWebhookKey;
+  const suppliedKey = req.query.trialKey;
+  if (!env.twilioTrialMode || expectedKey.length < 32 || typeof suppliedKey !== 'string') return false;
+
+  const expected = Buffer.from(expectedKey);
+  const supplied = Buffer.from(suppliedKey);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
+function ivrWebhookUrl(path: string) {
+  const url = TwilioService.webhookUrl(path);
+  if (!env.twilioTrialMode || env.twilioTrialWebhookKey.length < 32) return url;
+  return `${url}${path.includes('?') ? '&' : '?'}trialKey=${encodeURIComponent(env.twilioTrialWebhookKey)}`;
+}
+
 function twilioWebhook(req: Request, res: Response, next: NextFunction) {
   if (!env.twilioAuthToken || !env.twilioWebhookBaseUrl.startsWith('https://')) {
     twimlResponse(res, 503);
@@ -98,12 +114,24 @@ function twilioWebhook(req: Request, res: Response, next: NextFunction) {
   }
 
   const signature = req.header('x-twilio-signature') ?? '';
-  const expectedUrl = `${env.twilioWebhookBaseUrl}${req.path}`;
+  const requestPath = req.originalUrl.startsWith(req.baseUrl)
+    ? req.originalUrl.slice(req.baseUrl.length)
+    : req.path;
+  const expectedUrl = `${env.twilioWebhookBaseUrl}${requestPath}`;
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
     return res.status(400).send('Invalid Twilio webhook payload.');
   }
   const params = req.body as Record<string, string>;
-  if (!TwilioService.isWebhookSignatureValid(expectedUrl, signature, params)) {
+  const signatureValid = TwilioService.isWebhookSignatureValid(expectedUrl, signature, params);
+  const trialKeyValid = !signature && trialWebhookKeyMatches(req);
+  if (!signatureValid && !trialKeyValid) {
+    console.warn('Twilio webhook signature validation failed.', {
+      signaturePresent: Boolean(signature),
+      trialKeyPresent: typeof req.query.trialKey === 'string',
+      requestHost: req.get('host'),
+      requestPath: req.path,
+      configuredWebhookHost: new URL(env.twilioWebhookBaseUrl).host,
+    });
     return res.status(403).send('Invalid Twilio webhook signature.');
   }
   return next();
@@ -309,7 +337,7 @@ async function registerWithOtp(req: Request, res: Response) {
 
 router.get('/options', (_req: Request, res: Response) => {
   return res.json({
-    tollFreeNumber: env.twilioTollFreeNumber,
+    registrationNumber: env.twilioRegistrationNumber,
     otpConfigured: Boolean(env.twoFactorApiKey.trim() && env.twoFactorOtpTemplate.trim()),
     ivrDemoEnabled: env.ivrDemoMode,
   });
@@ -384,7 +412,7 @@ router.post('/ivr/incoming', twilioWebhook, (req: Request, res: Response) => {
     return res.send(TwilioService.sayIvrMessage('otpUnavailable'));
   }
   twimlResponse(res);
-  return res.send(TwilioService.generateIVRMenu(TwilioService.webhookUrl('/ivr/start-registration')));
+  return res.send(TwilioService.generateIVRMenu(ivrWebhookUrl('/ivr/start-registration')));
 });
 
 router.post('/ivr/start-registration', twilioWebhook, (req: Request, res: Response, next) => {
@@ -423,7 +451,7 @@ async function startIvrRegistration(req: Request, res: Response) {
   }
   if (pendingChallenge && pendingChallenge.expiresAt > Date.now()) {
     twimlResponse(res);
-    return res.send(TwilioService.promptForIvrOtp(TwilioService.webhookUrl('/ivr/verify-registration')));
+    return res.send(TwilioService.promptForIvrOtp(ivrWebhookUrl('/ivr/verify-registration')));
   }
   if (now - requestedAt < IVR_OTP_COOLDOWN_MS) {
     twimlResponse(res);
@@ -449,7 +477,7 @@ async function startIvrRegistration(req: Request, res: Response) {
     purpose: 'ivr-register',
   });
   twimlResponse(res);
-  return res.send(TwilioService.promptForIvrOtp(TwilioService.webhookUrl('/ivr/verify-registration')));
+  return res.send(TwilioService.promptForIvrOtp(ivrWebhookUrl('/ivr/verify-registration')));
 }
 
 router.post('/ivr/verify-registration', twilioWebhook, (req: Request, res: Response, next) => {

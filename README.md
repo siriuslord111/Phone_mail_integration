@@ -1,3 +1,26 @@
+## SMS message notifications
+
+SMS notifications are opt-in and off by default. A signed-in user can enable
+them in **Settings → Notifications**; PhoneMail then sends a short alert to the
+account's registered phone number when a direct message, group message, or new
+inbound email arrives. The SMS does not include the message body. Standard
+carrier charges may apply, and users can turn notifications off in the same
+setting.
+
+To enable delivery, configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and
+`TWILIO_PHONE_NUMBER` in the root `.env`. `TWILIO_PHONE_NUMBER` must be a
+Twilio-owned, SMS-capable number in E.164 format (for example,
+`+14155552671`); it can differ from the toll-free voice number used for
+registration. Complete any required Twilio sender verification, A2P/toll-free
+registration, billing, and destination-country setup. Trial accounts may only
+send to verified recipient numbers. Rebuild the API to apply the settings:
+
+```powershell
+docker compose up -d --build api frontend
+```
+
+The app applies the Prisma schema at startup, so the new preference is stored
+in PostgreSQL and remains off for existing users until they opt in.
 # PhoneMail
 
 A lightweight PhoneMail prototype with a React client, Express API, and PostgreSQL
@@ -71,6 +94,33 @@ TWO_FACTOR_API_KEY=your-2factor-api-key
 TWO_FACTOR_OTP_TEMPLATE=your-approved-otp-template
 ```
 
+### Try out Voice unsigned-webhook mode
+
+Some Twilio **Try out Voice** custom inbound tests call the configured webhook
+without an `X-Twilio-Signature`; normal Twilio number webhooks remain
+signature-validated. To test this trial-only path, set `TWILIO_TRIAL_MODE=true`
+and generate a private random key locally:
+
+```powershell
+$bytes = New-Object byte[] 32
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$trialKey = [System.BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
+$trialKey
+```
+
+Put that value in `.env` as `TWILIO_TRIAL_WEBHOOK_KEY`, and append it to the
+Custom inbound webhook URL in the Try out Voice page:
+
+```text
+https://your-ngrok-host.ngrok-free.dev/api/auth/ivr/incoming?trialKey=YOUR_RANDOM_KEY
+```
+
+Rebuild the API. PhoneMail will include the same key on the keypad callback
+URLs; requests without a valid key are rejected. This is a temporary testing
+guard, not equivalent to Twilio signatures: keep the URL private and remove the
+key/disable trial mode after testing.
+
 In the Twilio Console, set the toll-free number's **A Call Comes In** webhook to
 `https://your-public-tunnel.example/api/auth/ivr/incoming` and select **HTTP
 POST**. The application validates Twilio's request signature and returns
@@ -81,7 +131,10 @@ or expose the Twilio Auth Token. Rebuild the API after changing `.env`:
 docker compose up -d --build api frontend
 ```
 
-The number shown on the registration page comes from `TWILIO_TOLL_FREE_NUMBER`.
+The call-registration number shown on the registration page comes from
+`TWILIO_REGISTRATION_NUMBER`. For existing deployments,
+`TWILIO_TOLL_FREE_NUMBER` remains a fallback for that setting. A Twilio trial
+number can be used for testing calls but is not necessarily toll-free.
 Twilio may require toll-free verification or account approval before calls or
 messages work; trial-account geographic and recipient restrictions also apply.
 Confirm that your toll-free number can receive calls from the countries where
@@ -187,3 +240,19 @@ in PostgreSQL. This works locally without Gmail SMTP or public DNS. If an
 message. Ordinary external email addresses continue to use the configured SMTP
 provider. Attachments up to 10 MB each (5 files per message) are stored with
 local PhoneMail-to-PhoneMail messages and delivered with external email.
+
+## Twilio trial SMS notifications
+
+Twilio trial accounts reject custom SMS bodies. For testing, set
+`TWILIO_TRIAL_MODE=true` in the root `.env` and set
+`TWILIO_TRIAL_PHONE_NUMBER` to the trial sender shown by Twilio's successful
+sample request. PhoneMail submits the same `From` and `To` shape and the
+`sms_account_alerts` template. Twilio sends its generic account-alert text
+rather than a PhoneMail-specific notification. Rebuild the API:
+
+```powershell
+docker compose -p phonemail-local up -d --build api
+```
+
+Set `TWILIO_TRIAL_MODE=false` after upgrading to restore the normal custom SMS.
+See [Twilio trial SMS limitations](https://www.twilio.com/docs/usage/trials/try-out-sms).

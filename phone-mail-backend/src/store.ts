@@ -8,6 +8,7 @@ export type User = {
   passwordHash?: string;
   createdAt: string;
   hasMobileApp: boolean;
+  smsNotificationsEnabled: boolean;
 };
 
 export type OtpChallenge = {
@@ -60,6 +61,7 @@ export function ensureUser(phoneNumber: string, passwordHash?: string, hasMobile
     passwordHash,
     createdAt: new Date().toISOString(),
     hasMobileApp,
+    smsNotificationsEnabled: false,
   };
 
   users.push(user);

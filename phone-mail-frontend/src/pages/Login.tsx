@@ -274,10 +274,10 @@ export default function Login() {
               )}
               <p className="text-[11px]">{t('localDemoOnly')}</p>
             </div>
-          ) : authOptions.tollFreeNumber ? (
+          ) : authOptions.registrationNumber ? (
             authOptions.otpConfigured ? (
               <p>
-                {t('preferCall')}{' '}<a className="font-semibold underline" href={`tel:${authOptions.tollFreeNumber}`}>{authOptions.tollFreeNumber}</a>,
+                {t('preferCall')}{' '}<a className="font-semibold underline" href={`tel:${authOptions.registrationNumber}`}>{authOptions.registrationNumber}</a>,
                 {' '}{t('pressOneThenOtp')}
               </p>
             ) : (

@@ -19,6 +19,7 @@ model User {
   name                 String?
   bio                  String?
   hasMobileApp         Boolean                    @default(false) // Used to determine if SMS notifications are needed[cite: 1]
+  smsNotificationsEnabled Boolean                  @default(false)
   conversations        Conversation[]
   inboundEmails        InboundEmail[]
   mailMessages         MailMessage[]

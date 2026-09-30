@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { findAccountByPhone } from './account.service';
 import { normalizePhone } from '../store';
+import { notifyIncomingMessage } from './message-notification.service';
 
 type MailpitAddress = {
   Address?: string;
@@ -71,14 +72,8 @@ async function importMessage(summary: MailpitMessageSummary) {
     const user = await findAccountByPhone(phone);
     if (!user) continue;
 
-    await prisma.inboundEmail.upsert({
-      where: {
-        providerMessageId_userId: {
-          providerMessageId: detail.ID,
-          userId: user.id,
-        },
-      },
-      create: {
+    const created = await prisma.inboundEmail.createMany({
+      data: [{
         providerMessageId: detail.ID,
         userId: user.id,
         fromAddress,
@@ -88,9 +83,10 @@ async function importMessage(summary: MailpitMessageSummary) {
         receivedAt,
         mailbox: 'inbox',
         isRead: false,
-      },
-      update: {},
+      }],
+      skipDuplicates: true,
     });
+    if (created.count > 0) void notifyIncomingMessage([user], fromAddress);
   }
 }
 

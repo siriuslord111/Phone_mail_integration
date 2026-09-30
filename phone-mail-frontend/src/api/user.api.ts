@@ -25,3 +25,24 @@ export async function updateProfile(patch: Partial<Pick<User, 'name' | 'avatarUr
   const { data } = await api.patch('/users/me', patch);
   return data.user ?? data;
 }
+
+export async function getSmsNotificationsEnabled(): Promise<boolean> {
+  const preferenceKey = 'phonemail_setting_notifications';
+  if (DEMO_MODE) {
+    await demoDelay(150);
+    return localStorage.getItem(preferenceKey) === 'true';
+  }
+  const { data } = await api.get('/user/preferences');
+  return data.user?.smsNotificationsEnabled === true;
+}
+
+export async function setSmsNotificationsEnabled(enabled: boolean): Promise<boolean> {
+  const preferenceKey = 'phonemail_setting_notifications';
+  if (DEMO_MODE) {
+    await demoDelay(150);
+    localStorage.setItem(preferenceKey, String(enabled));
+    return enabled;
+  }
+  const { data } = await api.put('/user/preferences', { smsNotificationsEnabled: enabled });
+  return data.user?.smsNotificationsEnabled === true;
+}

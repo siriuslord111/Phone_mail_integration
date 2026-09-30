@@ -8,6 +8,7 @@ import { findAccountByEmail, findAccountsByPhones, memoryStoreEnabled, updateAcc
 import { getContactNicknames, saveContactNickname } from '../services/contact-nickname.service';
 import { prisma } from '../config/prisma';
 import { CannotSendToSelfError, deliverEmail, UnknownPhoneMailRecipientError } from '../services/email-delivery.service';
+import { notifyIncomingMessage } from '../services/message-notification.service';
 import multer from 'multer';
 
 const router = Router();
@@ -725,6 +726,11 @@ router.post('/messages', (req, res, next) => {
         where: { id: requestedGroupId },
         data: { updatedAt: new Date() },
       });
+      const groupRecipients = await prisma.groupChatMember.findMany({
+        where: { groupChatId: requestedGroupId, userId: { not: senderAccount.id } },
+        select: { user: { select: { phoneNumber: true, smsNotificationsEnabled: true } } },
+      });
+      void notifyIncomingMessage(groupRecipients.map(({ user }) => user), senderAccount.phoneNumber);
       const messageView = groupMessageView(message, sender);
       return res.status(201).json({
         message: {
@@ -795,6 +801,7 @@ router.post('/messages', (req, res, next) => {
         });
         return { group, message };
       });
+      void notifyIncomingMessage(recipientAccounts.filter((account): account is NonNullable<typeof account> => Boolean(account)), senderAccount.phoneNumber);
       return res.status(201).json({
         message: {
           ...groupMessageView(result.message, sender),

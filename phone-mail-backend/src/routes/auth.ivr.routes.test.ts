@@ -46,7 +46,7 @@ before(async () => {
   users = store.users;
   env.twilioAuthToken = TWILIO_TOKEN;
   env.twilioWebhookBaseUrl = WEBHOOK_BASE_URL;
-  env.twilioTollFreeNumber = '+18005550100';
+  env.twilioRegistrationNumber = '+18005550100';
   env.ivrDemoMode = true;
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -62,11 +62,11 @@ after(async () => {
   });
 });
 
-test('public auth options expose only the toll-free number and OTP availability', async () => {
+test('public auth options expose the call registration number and OTP availability', async () => {
   const response = await fetch(`${baseUrl}/api/auth/options`);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    tollFreeNumber: '+18005550100',
+    registrationNumber: '+18005550100',
     otpConfigured: false,
     ivrDemoEnabled: true,
   });
@@ -140,6 +140,50 @@ test('incoming Twilio call requires a valid signature and returns a keypad menu'
   assert.equal(accepted.status, 200);
   assert.match(await accepted.text(), /Press 1 to create an account/);
   assert.equal(users.some((user) => user.phoneNumber === '+14155550100'), false);
+});
+
+test('trial IVR accepts unsigned requests only with its configured webhook key', async () => {
+  const originalTrialMode = env.twilioTrialMode;
+  const originalTrialKey = env.twilioTrialWebhookKey;
+  const trialKey = 'test-trial-webhook-key-with-32-bytes';
+  env.twilioTrialMode = true;
+  env.twilioTrialWebhookKey = trialKey;
+
+  try {
+    const params = {
+      CallSid: 'CA-trial-call',
+      From: '+14155550100',
+      To: '+18005550100',
+      CallStatus: 'ringing',
+    };
+    const accepted = await fetch(`${baseUrl}/api/auth/ivr/incoming?trialKey=${trialKey}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: formBody(params),
+    });
+    assert.equal(accepted.status, 200);
+    assert.match(await accepted.text(), new RegExp(`/ivr/start-registration\\?trialKey=${trialKey}`));
+
+    const invalidSigned = await fetch(`${baseUrl}/api/auth/ivr/incoming?trialKey=${trialKey}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'x-twilio-signature': 'invalid',
+      },
+      body: formBody(params),
+    });
+    assert.equal(invalidSigned.status, 403);
+
+    const rejected = await fetch(`${baseUrl}/api/auth/ivr/incoming?trialKey=wrong-trial-webhook-key-123456789`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: formBody(params),
+    });
+    assert.equal(rejected.status, 403);
+  } finally {
+    env.twilioTrialMode = originalTrialMode;
+    env.twilioTrialWebhookKey = originalTrialKey;
+  }
 });
 
 test('voice registration cannot create an account without a valid OTP challenge', async () => {

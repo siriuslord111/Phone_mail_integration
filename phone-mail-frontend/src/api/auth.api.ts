@@ -11,13 +11,13 @@ export interface VerifyResult {
 export type AuthPurpose = 'login' | 'register';
 
 export interface AuthOptions {
-  tollFreeNumber: string;
+  registrationNumber: string;
   otpConfigured: boolean;
   ivrDemoEnabled: boolean;
 }
 
 export async function getAuthOptions(): Promise<AuthOptions> {
-  if (DEMO_MODE) return { tollFreeNumber: '', otpConfigured: false, ivrDemoEnabled: false };
+  if (DEMO_MODE) return { registrationNumber: '', otpConfigured: false, ivrDemoEnabled: false };
   const { data } = await api.get('/auth/options');
   return data;
 }
