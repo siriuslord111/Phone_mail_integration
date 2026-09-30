@@ -1,11 +1,9 @@
 import type { User as PrismaUser } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
-import { aliases, ensureUser, normalizePhone, users, type Alias, type User } from '../store';
+import { ensureUser, normalizePhone, users, type User } from '../store';
 
 export class AccountAlreadyExistsError extends Error {}
-export class AliasAlreadyExistsError extends Error {}
-export class AliasNotFoundError extends Error {}
 
 export const memoryStoreEnabled = process.env.PHONEMAIL_STORAGE_MODE === 'memory';
 
@@ -35,63 +33,11 @@ export async function findAccountByPhone(phoneNumber: string): Promise<User | un
 export async function findAccountByEmail(email: string): Promise<User | undefined> {
   const normalizedEmail = email.trim().toLowerCase();
   if (memoryStoreEnabled) {
-    const user = users.find((item) => item.email.toLowerCase() === normalizedEmail);
-    if (user) return user;
-    const alias = aliases.find((item) => item.address === normalizedEmail);
-    return alias ? users.find((item) => item.id === alias.userId) : undefined;
+    return users.find((user) => user.email.toLowerCase() === normalizedEmail);
   }
 
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-  if (user) return toAccount(user);
-  const alias = await prisma.alias.findUnique({ where: { address: normalizedEmail }, include: { user: true } });
-  return alias ? toAccount(alias.user) : undefined;
-}
-
-function toAlias(alias: { id: string; address: string; userId: string; createdAt: Date }): Alias {
-  return {
-    id: alias.id,
-    address: alias.address,
-    userId: alias.userId,
-    createdAt: alias.createdAt.toISOString(),
-  };
-}
-
-export async function listAccountAliases(user: User): Promise<Alias[]> {
-  if (memoryStoreEnabled) return aliases.filter((alias) => alias.userId === user.id);
-  const accountAliases = await prisma.alias.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'asc' } });
-  return accountAliases.map(toAlias);
-}
-
-export async function createAccountAlias(user: User, address: string): Promise<Alias> {
-  if (memoryStoreEnabled) {
-    if (users.some((item) => item.email.toLowerCase() === address) || aliases.some((item) => item.address === address)) {
-      throw new AliasAlreadyExistsError();
-    }
-    const alias = { id: `alias-${Date.now()}-${Math.random().toString(36).slice(2)}`, address, userId: user.id, createdAt: new Date().toISOString() };
-    aliases.push(alias);
-    return alias;
-  }
-
-  try {
-    return toAlias(await prisma.alias.create({ data: { address, userId: user.id } }));
-  } catch (error) {
-    if (error !== null && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
-      throw new AliasAlreadyExistsError();
-    }
-    throw error;
-  }
-}
-
-export async function deleteAccountAlias(user: User, aliasId: string): Promise<void> {
-  if (memoryStoreEnabled) {
-    const index = aliases.findIndex((alias) => alias.id === aliasId && alias.userId === user.id);
-    if (index < 0) throw new AliasNotFoundError();
-    aliases.splice(index, 1);
-    return;
-  }
-  const alias = await prisma.alias.findFirst({ where: { id: aliasId, userId: user.id }, select: { id: true } });
-  if (!alias) throw new AliasNotFoundError();
-  await prisma.alias.delete({ where: { id: alias.id } });
+  return user ? toAccount(user) : undefined;
 }
 
 export async function findAccountsByPhones(phoneNumbers: string[]): Promise<User[]> {
