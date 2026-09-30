@@ -10,7 +10,7 @@ import { useLanguage } from '../context/LanguageProvider';
 import { LANGUAGES, readLanguage, translate } from '../utils/i18n';
 import { getAuthOptions, sendOtp, startDemoIvrRegistration, type AuthOptions } from '../api/auth.api';
 
-type Step = 'language' | 'terms' | 'phone';
+type Step = 'language' | 'terms' | 'phone' | 'registration-otp';
 type AuthMode = 'login' | 'register';
 type AuthMethod = 'otp' | 'password';
 
@@ -51,6 +51,7 @@ export default function Login() {
   }, []);
 
   const handleSubmit = async () => {
+    const otpRequired = method === 'otp' || (method === 'password' && mode === 'register');
     if (phone.length !== 10) {
       setError(t('validPhone'));
       return;
@@ -63,7 +64,7 @@ export default function Login() {
       setError(t('passwordMismatch'));
       return;
     }
-    if (method === 'otp' && otpSent && !/^\d{6}$/.test(otp)) {
+    if (otpRequired && otpSent && !/^\d{6}$/.test(otp)) {
       setError(t('enterOtp'));
       return;
     }
@@ -71,14 +72,15 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      if (method === 'otp' && !otpSent) {
+      if (otpRequired && !otpSent) {
         await sendOtp(phone, mode);
         setOtpSent(true);
+        if (method === 'password' && mode === 'register') setStep('registration-otp');
       } else if (method === 'otp') {
         await authenticateOtp(phone, otp, mode);
         navigate('/', { replace: true });
       } else if (mode === 'register') {
-        await registerPassword(phone, password);
+        await registerPassword(phone, password, otp);
         navigate('/', { replace: true });
       } else {
         await loginPassword(phone, password);
@@ -205,6 +207,31 @@ export default function Login() {
     );
   }
 
+  if (step === 'registration-otp') {
+    return (
+      <div className="flex flex-1 flex-col">
+        <h1 className="mb-1 text-lg font-semibold text-slate-900">{t('verifyAndContinue')}</h1>
+        <p className="mb-5 text-sm text-slate-500">{t('enterOtp')}</p>
+        <input
+          type="text"
+          value={otp}
+          onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          autoFocus
+          placeholder={t('otpPlaceholder')}
+          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-[#1a66ff]"
+        />
+        {error && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
+        <div className="mt-auto pt-6">
+          <Button fullWidth size="lg" loading={loading} onClick={handleSubmit} className="justify-center">
+            {t('verifyAndContinue')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col">
       <h1 className="mb-1 text-lg font-semibold text-slate-900">
@@ -232,7 +259,7 @@ export default function Login() {
       </div>
       <div className="mt-3 flex rounded-xl bg-slate-100 p-1 text-sm">
         <button onClick={() => { setMethod('otp'); setOtpSent(false); setError(''); }} className={`flex-1 rounded-lg py-2 ${method === 'otp' ? 'bg-white font-semibold text-[#1a66ff] shadow-sm' : 'text-slate-500'}`}>{t('phoneOtp')}</button>
-        <button onClick={() => { setMethod('password'); setOtpSent(false); setError(''); }} className={`flex-1 rounded-lg py-2 ${method === 'password' ? 'bg-white font-semibold text-[#1a66ff] shadow-sm' : 'text-slate-500'}`}>{t('password')}</button>
+        <button onClick={() => { setMethod('password'); setOtpSent(false); setOtp(''); setError(''); }} className={`flex-1 rounded-lg py-2 ${method === 'password' ? 'bg-white font-semibold text-[#1a66ff] shadow-sm' : 'text-slate-500'}`}>{t('password')}</button>
       </div>
       {mode === 'register' && (
         <div className="mt-3 rounded-xl bg-blue-50 px-3 py-2.5 text-xs leading-relaxed text-blue-800">
@@ -310,7 +337,7 @@ export default function Login() {
           className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-[#1a66ff]"
         />
       )}
-      {method === 'otp' && otpSent && (
+      {(method === 'otp' || (method === 'password' && mode === 'register')) && otpSent && (
         <input
           type="text"
           value={otp}
@@ -338,7 +365,7 @@ export default function Login() {
       )}
       <div className="mt-auto pt-6">
         <Button fullWidth size="lg" loading={loading} onClick={handleSubmit} className="justify-center">
-          {method === 'otp'
+          {method === 'otp' || (method === 'password' && mode === 'register')
             ? otpSent ? t('verifyAndContinue') : t('sendOtp')
             : mode === 'register' ? t('createAccountButton') : t('logIn')}
         </Button>

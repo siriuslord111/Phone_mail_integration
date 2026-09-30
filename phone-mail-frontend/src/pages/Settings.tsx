@@ -267,7 +267,14 @@ export default function Settings() {
                   className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#1a66ff]"
                 />
               </label>
-              {passwordError && <p role="alert" className="text-sm text-rose-600">{passwordError}</p>}
+              {passwordError && (
+                <p
+                  role={passwordError.includes('Current password is incorrect') ? 'status' : 'alert'}
+                  className={passwordError.includes('Current password is incorrect') ? 'text-sm text-amber-700' : 'text-sm text-rose-600'}
+                >
+                  {passwordError}
+                </p>
+              )}
               {passwordStatus && <p role="status" className="text-sm text-emerald-700">{passwordStatus}</p>}
               <button
                 type="submit"

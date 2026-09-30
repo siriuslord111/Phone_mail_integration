@@ -91,6 +91,21 @@ function twimlResponse(res: Response, status = 200) {
   res.status(status).type('text/xml');
 }
 
+function validTwilioWebhookBaseUrl() {
+  try {
+    const url = new URL(env.twilioWebhookBaseUrl);
+    return url.protocol === 'https:'
+      && Boolean(url.hostname)
+      && !url.username
+      && !url.password
+      && !url.search
+      && !url.hash
+      && url.pathname.replace(/\/+$/, '').endsWith('/api/auth');
+  } catch {
+    return false;
+  }
+}
+
 function trialWebhookKeyMatches(req: Request) {
   const expectedKey = env.twilioTrialWebhookKey;
   const suppliedKey = req.query.trialKey;
@@ -108,7 +123,7 @@ function ivrWebhookUrl(path: string) {
 }
 
 function twilioWebhook(req: Request, res: Response, next: NextFunction) {
-  if (!env.twilioAuthToken || !env.twilioWebhookBaseUrl.startsWith('https://')) {
+  if (!validTwilioWebhookBaseUrl()) {
     twimlResponse(res, 503);
     return res.send(TwilioService.sayIvrMessage('otpUnavailable'));
   }
@@ -122,8 +137,15 @@ function twilioWebhook(req: Request, res: Response, next: NextFunction) {
     return res.status(400).send('Invalid Twilio webhook payload.');
   }
   const params = req.body as Record<string, string>;
-  const signatureValid = TwilioService.isWebhookSignatureValid(expectedUrl, signature, params);
   const trialKeyValid = !signature && trialWebhookKeyMatches(req);
+  if (!env.twilioAuthToken && !trialKeyValid
+    && (!env.twilioTrialMode || env.twilioTrialWebhookKey.length < 32)) {
+    twimlResponse(res, 503);
+    return res.send(TwilioService.sayIvrMessage('otpUnavailable'));
+  }
+
+  const signatureValid = Boolean(env.twilioAuthToken)
+    && TwilioService.isWebhookSignatureValid(expectedUrl, signature, params);
   if (!signatureValid && !trialKeyValid) {
     console.warn('Twilio webhook signature validation failed.', {
       signaturePresent: Boolean(signature),
@@ -191,6 +213,7 @@ async function registerWithPassword(req: Request, res: Response) {
   if (await findAccountByPhone(phone)) {
     return res.status(409).json({ success: false, message: 'An account already exists for this phone number. Log in instead.' });
   }
+  if (!verifyChallenge(phone, req.body?.otp, 'register', res)) return;
 
   const passwordHash = await hashPassword(password);
   if (await findAccountByPhone(phone)) {
@@ -237,7 +260,7 @@ router.post('/change-password', requireAuth, async (req: Request, res: Response,
   const user = res.locals.authenticatedUser as User;
   try {
     if (user.passwordHash && !await verifyPassword(currentPassword, user.passwordHash)) {
-      return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+      return res.status(400).json({ success: false, message: 'Current password is incorrect. Try again.' });
     }
     await updateAccountPassword(user, await hashPassword(newPassword));
     return res.json({ success: true, message: 'Password updated successfully.' });
@@ -407,7 +430,7 @@ async function verifyDemoIvrRegistration(req: Request, res: Response) {
 }
 
 router.post('/ivr/incoming', twilioWebhook, (req: Request, res: Response) => {
-  if (!env.twilioWebhookBaseUrl) {
+  if (!validTwilioWebhookBaseUrl()) {
     twimlResponse(res, 503);
     return res.send(TwilioService.sayIvrMessage('otpUnavailable'));
   }

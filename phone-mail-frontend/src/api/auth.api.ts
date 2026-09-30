@@ -125,7 +125,7 @@ export async function loginWithPassword(phone: string, password: string): Promis
   return { token: data.token, user: data.user, isNewUser: data.isNewUser ?? !data.user?.name };
 }
 
-export async function registerWithPassword(phone: string, password: string): Promise<VerifyResult> {
+export async function registerWithPassword(phone: string, password: string, otp: string): Promise<VerifyResult> {
   if (DEMO_MODE) {
     await demoDelay();
     if (password.length < 8 || password.length > 128) throw new Error('Password must be between 8 and 128 characters.');
@@ -141,6 +141,7 @@ export async function registerWithPassword(phone: string, password: string): Pro
   const { data } = await api.post('/auth/register', {
     phone: toInternationalPhone(phone),
     password,
+    otp,
     client: 'web',
   });
   return { token: data.token, user: data.user, isNewUser: data.isNewUser ?? !data.user?.name };

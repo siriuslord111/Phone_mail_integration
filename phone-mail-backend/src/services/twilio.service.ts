@@ -16,7 +16,8 @@ export class TwilioService {
   }
 
   static webhookUrl(path: string) {
-    return `${env.twilioWebhookBaseUrl}${path}`;
+    const baseUrl = `${env.twilioWebhookBaseUrl.replace(/\/+$/, '')}/`;
+    return new URL(path.replace(/^\/+/, ''), baseUrl).toString();
   }
 
   static isWebhookSignatureValid(url: string, signature: string, params: Record<string, string>) {

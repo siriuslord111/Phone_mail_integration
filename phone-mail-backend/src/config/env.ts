@@ -25,7 +25,7 @@ export const env = {
   twilioRegistrationNumber: process.env.TWILIO_REGISTRATION_NUMBER?.trim()
     || process.env.TWILIO_TOLL_FREE_NUMBER?.trim()
     || '',
-  twilioWebhookBaseUrl: process.env.TWILIO_WEBHOOK_BASE_URL?.replace(/\/+$/, '') ?? '',
+  twilioWebhookBaseUrl: process.env.TWILIO_WEBHOOK_BASE_URL?.trim().replace(/\/+$/, '') ?? '',
   ivrDemoMode: process.env.IVR_DEMO_MODE === 'true',
   databaseUrl: process.env.DATABASE_URL ?? 'postgresql://postgres:password@db:5432/phonemail',
   smtpHost: process.env.SMTP_HOST ?? 'smtp.gmail.com',

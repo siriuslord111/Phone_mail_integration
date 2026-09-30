@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { after, before, test } from 'node:test';
+import { ipKeyGenerator } from 'express-rate-limit';
+import { after, before, beforeEach, test } from 'node:test';
 
 import type { Express } from 'express';
+import { loginRateLimit } from '../middlewares/login-rate-limit';
 import type { User } from '../store';
 
 let baseUrl: string;
@@ -11,7 +13,20 @@ let users: User[];
 let messages: typeof import('../store').messages;
 let otpStore: typeof import('../store').otpStore;
 let authTokenSecret: string;
+let testRateLimitKey: string;
 let server: ReturnType<Express['listen']>;
+
+function seedRegistrationOtp(phone: string, otp = '246810') {
+  const digits = phone.replace(/\D/g, '');
+  const normalizedPhone = digits.length === 10 ? `+91${digits}` : `+${digits}`;
+  otpStore.set(`register:${normalizedPhone}`, {
+    hash: createHmac('sha256', authTokenSecret).update(`${normalizedPhone}:${otp}`).digest('hex'),
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    attempts: 0,
+    purpose: 'register',
+  });
+  return { normalizedPhone, otp };
+}
 
 before(async () => {
   process.env.PHONEMAIL_STORAGE_MODE = 'memory';
@@ -24,12 +39,18 @@ before(async () => {
   messages = store.messages;
   otpStore = store.otpStore;
   authTokenSecret = (await import('../config/env')).env.authTokenSecret;
+  app.get('/__test/client-ip', (req, res) => res.json({ ip: req.ip }));
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Test server failed to bind a port.');
   baseUrl = `http://127.0.0.1:${address.port}`;
+  const ipResponse = await fetch(`${baseUrl}/__test/client-ip`);
+  const client = await ipResponse.json() as { ip: string };
+  testRateLimitKey = ipKeyGenerator(client.ip);
 });
+
+beforeEach(() => loginRateLimit.resetKey(testRateLimitKey));
 
 after(async () => {
   if (!server) return;
@@ -38,20 +59,35 @@ after(async () => {
   });
 });
 
-test('password registration hashes credentials and issues an authenticated session', async () => {
+test('password registration requires a valid OTP before creating an account', async () => {
   const phone = `9${Math.floor(100_000_000 + Math.random() * 900_000_000)}`;
   const password = 'correct horse battery staple';
-  const registerResponse = await fetch(`${baseUrl}/api/auth/register`, {
+  const missingOtpResponse = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ phone, password, client: 'web' }),
   });
+  assert.equal(missingOtpResponse.status, 401);
+  assert.equal(users.some((user) => user.phoneNumber.endsWith(phone)), false);
 
-  assert.equal(registerResponse.status, 201);
-  const registration = await registerResponse.json() as { token: string; user: Record<string, unknown> };
-  assert.ok(registration.token);
-  assert.equal('password' in registration.user, false);
+  const { normalizedPhone, otp } = seedRegistrationOtp(phone);
+  const registerResponse = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone, password, otp, client: 'web' }),
+  });
+
+  const registrationBody = await registerResponse.clone().text();
+  assert.equal(
+    registerResponse.status,
+    201,
+    `${registerResponse.statusText} (${registerResponse.headers.get('content-type')}): ${registrationBody.slice(0, 200)}`,
+  );
+  const registrationResult = await registerResponse.json() as { token: string; user: Record<string, unknown> };
+  assert.ok(registrationResult.token);
+  assert.equal('password' in registrationResult.user, false);
   assert.equal(users.find((user) => user.phoneNumber.endsWith(phone))?.passwordHash?.startsWith('$argon2id$'), true);
+  assert.equal(otpStore.has(`register:${normalizedPhone}`), false);
 
   const duplicateRegistrationResponse = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
@@ -116,7 +152,15 @@ test('password registration hashes credentials and issues an authenticated sessi
     },
     body: JSON.stringify({ currentPassword: 'not the password', newPassword: 'new secure password' }),
   });
-  assert.equal(rejectedPasswordChange.status, 401);
+  assert.equal(rejectedPasswordChange.status, 400);
+  assert.deepEqual(await rejectedPasswordChange.json(), {
+    success: false,
+    message: 'Current password is incorrect. Try again.',
+  });
+  const sessionAfterRejectedPasswordChange = await fetch(`${baseUrl}/api/users/me`, {
+    headers: { authorization: `Bearer ${login.token}` },
+  });
+  assert.equal(sessionAfterRejectedPasswordChange.status, 200);
 
   const passwordChange = await fetch(`${baseUrl}/api/auth/change-password`, {
     method: 'POST',
@@ -156,16 +200,17 @@ test('password registration hashes credentials and issues an authenticated sessi
   assert.equal(updatedProfile.user.avatarUrl, 'data:image/png;base64,aGVsbG8=');
 
   const recipientPhone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
+  const recipientOtp = seedRegistrationOtp(recipientPhone).otp;
   const recipientResponse = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ phone: recipientPhone, password }),
+    body: JSON.stringify({ phone: recipientPhone, password, otp: recipientOtp }),
   });
   assert.equal(recipientResponse.status, 201);
   const recipient = await recipientResponse.json() as { token: string; user: { phoneNumber: string } };
   messages.push({
     id: `profile-test-${Date.now()}`,
-    from: registration.user.phoneNumber as string,
+    from: registrationResult.user.phoneNumber as string,
     to: [recipient.user.phoneNumber],
     subject: 'Profile propagation test',
     body: 'Hello',
@@ -186,7 +231,7 @@ test('password registration hashes credentials and issues an authenticated sessi
   assert.equal(contact.description, 'Profile description');
 
   const privateNickname = 'My private contact name';
-  const nicknameResponse = await fetch(`${baseUrl}/api/contacts/${encodeURIComponent(registration.user.phoneNumber as string)}/nickname`, {
+  const nicknameResponse = await fetch(`${baseUrl}/api/contacts/${encodeURIComponent(registrationResult.user.phoneNumber as string)}/nickname`, {
     method: 'PATCH',
     headers: {
       authorization: `Bearer ${recipient.token}`,
@@ -207,7 +252,7 @@ test('password registration hashes credentials and issues an authenticated sessi
   assert.equal(recipientContact.title, privateNickname);
   assert.equal(recipientContact.nickname, privateNickname);
   const ownerConversationsResponse = await fetch(`${baseUrl}/api/conversations`, {
-    headers: { authorization: `Bearer ${registration.token}` },
+    headers: { authorization: `Bearer ${registrationResult.token}` },
   });
   const ownerConversations = await ownerConversationsResponse.json() as {
     conversations: Array<{ title: string; nickname: string }>;
@@ -253,10 +298,11 @@ test('shared content requires authentication and avoids reporting unstored files
   assert.equal(unauthorized.status, 401);
 
   const phone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
+  const otp = seedRegistrationOtp(phone).otp;
   const registrationResponse = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ phone, password: 'shared-content-test-password' }),
+    body: JSON.stringify({ phone, password: 'shared-content-test-password', otp }),
   });
   assert.equal(registrationResponse.status, 201);
   const registration = await registrationResponse.json() as { token: string };
@@ -271,10 +317,11 @@ test('shared content requires authentication and avoids reporting unstored files
 test('conversation actions toggle read status and move messages to recoverable trash', async () => {
   const phone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
   const peerPhone = `+91${Math.floor(600_000_000 + Math.random() * 300_000_000)}`;
+  const otp = seedRegistrationOtp(phone).otp;
   const registrationResponse = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ phone, password: 'conversation-action-test-password' }),
+    body: JSON.stringify({ phone, password: 'conversation-action-test-password', otp }),
   });
   assert.equal(registrationResponse.status, 201);
   const registration = await registrationResponse.json() as { token: string; user: { phoneNumber: string } };

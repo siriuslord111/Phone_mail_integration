@@ -23,7 +23,7 @@ export interface AuthContextValue {
   user: User | null;
   /** true only while the very first "is there a session?" check is running */
   initializing: boolean;
-  registerPassword: (phone: string, password: string) => Promise<void>;
+  registerPassword: (phone: string, password: string, otp: string) => Promise<void>;
   loginPassword: (phone: string, password: string) => Promise<{ isNewUser: boolean }>;
   authenticateOtp: (phone: string, otp: string, purpose: AuthPurpose) => Promise<{ isNewUser: boolean }>;
   authenticateDemoIvr: (phone: string, otp: string) => Promise<void>;
@@ -72,8 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { isNewUser };
   }, []);
 
-  const registerPassword = useCallback(async (phone: string, password: string) => {
-    const { token, user: registeredUser } = await registerWithPassword(phone, password);
+  const registerPassword = useCallback(async (phone: string, password: string, otp: string) => {
+    const { token, user: registeredUser } = await registerWithPassword(phone, password, otp);
     localStorage.setItem(TOKEN_KEY, token);
     setUser(registeredUser);
   }, []);

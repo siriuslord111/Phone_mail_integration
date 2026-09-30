@@ -138,16 +138,37 @@ test('incoming Twilio call requires a valid signature and returns a keypad menu'
     body: formBody(params),
   });
   assert.equal(accepted.status, 200);
-  assert.match(await accepted.text(), /Press 1 to create an account/);
+  const twiml = await accepted.text();
+  assert.match(twiml, /Press 1 to create an account/);
+  assert.match(twiml, /https:\/\/public\.example\/api\/auth\/ivr\/start-registration/);
   assert.equal(users.some((user) => user.phoneNumber === '+14155550100'), false);
+});
+
+test('incoming IVR rejects malformed webhook base URLs before returning unusable TwiML', async () => {
+  const originalBaseUrl = env.twilioWebhookBaseUrl;
+  env.twilioWebhookBaseUrl = 'not-a-valid-public-url';
+  try {
+    const response = await fetch(`${baseUrl}/api/auth/ivr/incoming`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: formBody({ From: '+14155550100', To: '+18005550100' }),
+    });
+    assert.equal(response.status, 503);
+    assert.match(response.headers.get('content-type') ?? '', /text\/xml/);
+    assert.doesNotMatch(await response.text(), /<Gather/);
+  } finally {
+    env.twilioWebhookBaseUrl = originalBaseUrl;
+  }
 });
 
 test('trial IVR accepts unsigned requests only with its configured webhook key', async () => {
   const originalTrialMode = env.twilioTrialMode;
   const originalTrialKey = env.twilioTrialWebhookKey;
+  const originalAuthToken = env.twilioAuthToken;
   const trialKey = 'test-trial-webhook-key-with-32-bytes';
   env.twilioTrialMode = true;
   env.twilioTrialWebhookKey = trialKey;
+  env.twilioAuthToken = '';
 
   try {
     const params = {
@@ -183,6 +204,7 @@ test('trial IVR accepts unsigned requests only with its configured webhook key',
   } finally {
     env.twilioTrialMode = originalTrialMode;
     env.twilioTrialWebhookKey = originalTrialKey;
+    env.twilioAuthToken = originalAuthToken;
   }
 });
 

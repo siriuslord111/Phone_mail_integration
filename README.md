@@ -66,9 +66,11 @@ use.
 
 The 2Factor integration expects a valid account API key and an approved OTP SMS
 template; delivery cannot be tested until those credentials are supplied.
-Web and call-based account registration both create accounts only after an OTP
-has been verified. Call registration uses Twilio Voice for the call and 2Factor
-for the SMS code; the caller enters that code using the phone keypad.
+Web registration, including password sign-up, and call-based registration
+create accounts only after a 2Factor OTP has been verified. Password sign-up
+requests the OTP first, then creates the account after the code and password are
+submitted. Call registration uses Twilio Voice for the call and 2Factor for the
+SMS code; the caller enters that code using the phone keypad.
 
 ## Toll-free phone registration
 
@@ -93,6 +95,14 @@ TWILIO_WEBHOOK_BASE_URL=https://your-public-tunnel.example/api/auth
 TWO_FACTOR_API_KEY=your-2factor-api-key
 TWO_FACTOR_OTP_TEMPLATE=your-approved-otp-template
 ```
+
+Set the toll-free number's **A call comes in** Voice webhook in Twilio to the
+same public base URL followed by `/ivr/incoming`, using `POST`. If a temporary
+tunnel URL changes or the tunnel is restarted with a different hostname, update
+both this environment variable and the Twilio number's webhook, then restart
+the backend. A reserved tunnel domain or deployed HTTPS hostname avoids that
+drift. Follow-up IVR steps use the configured base URL and require it to be a
+valid HTTPS URL ending in `/api/auth`.
 
 ### Try out Voice unsigned-webhook mode
 
