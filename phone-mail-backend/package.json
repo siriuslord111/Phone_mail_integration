@@ -9,7 +9,7 @@
     "predev": "npm run prisma:generate",
     "build": "tsc --project tsconfig.json",
     "prebuild": "npm run prisma:generate",
-    "test": "tsx --test src/services/*.test.ts src/routes/*.test.ts",
+    "test": "tsx --test src/*.test.ts src/services/*.test.ts src/routes/*.test.ts",
     "pretest": "npm run prisma:generate",
     "prisma:generate": "prisma generate",
     "db:push": "prisma db push",
