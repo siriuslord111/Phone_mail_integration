@@ -317,6 +317,7 @@ export default function MainLayout() {
         <main
           className={cn(
             'min-w-0 flex-1 md:mb-3 md:mr-3 md:overflow-y-auto md:rounded-2xl md:bg-white md:shadow-sm md:ring-1 md:ring-slate-200/70',
+            pathname.startsWith('/settings') || pathname.startsWith('/profile') ? 'page-wallpaper' : '',
             chatOpen ? 'overflow-hidden' : 'overflow-y-auto pb-24 md:pb-0',
           )}
         >

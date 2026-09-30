@@ -26,7 +26,6 @@ interface MailListProps {
   canDeleteConversation: boolean;
   actionError?: string;
   search: string;
-  compact?: boolean;
 }
 
 export function MailList({
@@ -41,7 +40,6 @@ export function MailList({
   canDeleteConversation,
   actionError,
   search,
-  compact = false,
 }: MailListProps) {
   const { t } = useLanguage();
   const drag = useRef<{ pointerId: number; startX: number; startScrollLeft: number; moved: boolean; captured: boolean } | null>(null);
@@ -161,7 +159,7 @@ export function MailList({
                   className={cn(
                     cn(
                       'flex w-full items-center gap-3 px-4 text-left transition-colors duration-100 md:px-5',
-                      compact ? 'py-2' : 'py-3.5',
+                      'py-3.5',
                     ),
                     activeId === c.id ? 'bg-blue-50' : 'hover:bg-slate-50 active:bg-slate-100',
                   )}

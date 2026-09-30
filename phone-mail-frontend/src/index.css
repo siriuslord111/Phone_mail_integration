@@ -4,6 +4,11 @@
 :root {
   --app-background: #f3f6fb;
   --app-background-desktop: #eaf1fb;
+  --theme-wallpaper-image: url('/chat-wallpaper-light.jpeg');
+  --wallpaper-opacity: 0.10;
+  --wallpaper-surface-color: 255 255 255;
+  --chat-wallpaper-surface-color: 237 241 250;
+  --chat-wallpaper-background: #edf1fa;
 }
 
 html,
@@ -26,6 +31,10 @@ body {
   color-scheme: dark;
   --app-background: #111827;
   --app-background-desktop: #0b1220;
+  --theme-wallpaper-image: url('/chat-wallpaper-dark.jpeg');
+  --wallpaper-surface-color: 24 34 53;
+  --chat-wallpaper-surface-color: 17 28 44;
+  --chat-wallpaper-background: #111c2c;
   --dark-surface: #182235;
   --dark-surface-raised: #1d2a3e;
   --dark-surface-muted: #253349;
@@ -206,11 +215,6 @@ body {
   background-color: #1e3a5f;
 }
 
-.dark .chat-wallpaper {
-  background-color: #111c2c;
-  background-image: radial-gradient(rgb(148 163 184 / 0.07) 1px, transparent 1px);
-}
-
 :focus-visible {
   outline: 2px solid #1a66ff;
   outline-offset: 2px;
@@ -224,11 +228,30 @@ body {
 }
 
 /* ── Surfaces ─────────────────────────────────────────── */
-/* Faint dotted "paper" behind chats, like a messaging wallpaper */
+/* Keep the supplied artwork on the requested page and chat canvases. */
+.page-wallpaper {
+  background-image:
+    linear-gradient(
+      rgb(var(--wallpaper-surface-color) / calc(1 - var(--wallpaper-opacity))),
+      rgb(var(--wallpaper-surface-color) / calc(1 - var(--wallpaper-opacity)))
+    ),
+    var(--theme-wallpaper-image);
+  background-position: center, center;
+  background-size: 100% 100%, 760px 760px;
+  background-repeat: no-repeat, repeat;
+}
+
 .chat-wallpaper {
-  background-color: #edf1fa;
-  background-image: radial-gradient(rgba(26, 102, 255, 0.08) 1.2px, transparent 1.2px);
-  background-size: 18px 18px;
+  background-color: var(--chat-wallpaper-background);
+  background-image:
+    linear-gradient(
+      rgb(var(--chat-wallpaper-surface-color) / calc(1 - var(--wallpaper-opacity))),
+      rgb(var(--chat-wallpaper-surface-color) / calc(1 - var(--wallpaper-opacity)))
+    ),
+    var(--theme-wallpaper-image);
+  background-position: center, center;
+  background-size: 100% 100%, 768px 768px;
+  background-repeat: no-repeat, repeat;
 }
 
 /* ── Motion (only used where it answers a user action, or once on the auth hero) ── */

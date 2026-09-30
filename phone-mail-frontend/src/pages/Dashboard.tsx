@@ -74,8 +74,6 @@ export default function Dashboard() {
   const [conversationListWidth, setConversationListWidth] = useState(readConversationListWidth);
   const splitPaneRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef(false);
-  const compact = localStorage.getItem('phonemail_setting_compact_conversations') === 'true';
-
   const folder = FOLDER_BY_PATH[pathname] ?? 'inbox';
 
   useEffect(() => {
@@ -182,7 +180,6 @@ export default function Dashboard() {
             canDeleteConversation={folder !== 'trash'}
             actionError={conversationActionError}
             search={search}
-            compact={compact}
           />
         )}
       </div>

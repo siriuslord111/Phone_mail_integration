@@ -1,13 +1,12 @@
 import {
   Bell,
+  BookOpen,
   ChevronLeft,
   ChevronRight,
   Globe,
   KeyRound,
-  Lock,
   Palette,
   ShieldCheck,
-  SlidersHorizontal,
   UserRound,
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
@@ -30,6 +29,13 @@ interface SettingsOption {
 
 const OPTIONS: SettingsOption[] = [
   {
+    id: 'instructions',
+    title: 'instructions',
+    description: 'instructionsDescription',
+    detail: 'instructionsDetail',
+    icon: BookOpen,
+  },
+  {
     id: 'notifications',
     title: 'notifications',
     description: 'notificationDescription',
@@ -37,25 +43,11 @@ const OPTIONS: SettingsOption[] = [
     icon: Bell,
   },
   {
-    id: 'conversations',
-    title: 'compactConversations',
-    description: 'compactDescription',
-    detail: 'compactDetail',
-    icon: SlidersHorizontal,
-  },
-  {
     id: 'password',
     title: 'password',
     description: 'passwordSettingDescription',
     detail: 'passwordSettingDetail',
     icon: KeyRound,
-  },
-  {
-    id: 'privacy',
-    title: 'privacy',
-    description: 'privacyDescription',
-    detail: 'privacyDetail',
-    icon: Lock,
   },
   {
     id: 'appearance',
@@ -82,9 +74,19 @@ const OPTIONS: SettingsOption[] = [
 
 const PREFERENCE_KEYS: Record<string, string> = {
   notifications: 'phonemail_setting_notifications',
-  conversations: 'phonemail_setting_compact_conversations',
   appearance: 'phonemail_setting_dark_mode',
 };
+
+const INSTRUCTIONS: { title: TranslationKey; body: TranslationKey }[] = [
+  { title: 'guideAccount', body: 'guideAccountHelp' },
+  { title: 'guideInbox', body: 'guideInboxHelp' },
+  { title: 'guideSend', body: 'guideSendHelp' },
+  { title: 'guideMessages', body: 'guideMessagesHelp' },
+  { title: 'guideDrafts', body: 'guideDraftsHelp' },
+  { title: 'guideProfile', body: 'guideProfileHelp' },
+  { title: 'guideSettings', body: 'guideSettingsHelp' },
+  { title: 'guideSafety', body: 'guideSafetyHelp' },
+];
 
 function readPreference(key: string, defaultValue: boolean) {
   const saved = localStorage.getItem(key);
@@ -228,6 +230,21 @@ export default function Settings() {
             </div>
           </div>
           <p className="mt-5 text-sm leading-6 text-slate-600">{t(option.detail)}</p>
+          {option.id === 'instructions' && (
+            <ol className="mt-5 divide-y divide-slate-100 border-t border-slate-100">
+              {INSTRUCTIONS.map((instruction, index) => (
+                <li key={instruction.title} className="flex gap-3 py-4">
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-semibold text-[#1a66ff]">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-800">{t(instruction.title)}</h2>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">{t(instruction.body)}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
           {option.id === 'password' && (
             <form onSubmit={(event) => { void handlePasswordChange(event); }} className="mt-5 space-y-4 border-t border-slate-100 pt-4">
               <label className="block text-sm font-medium text-slate-700">
@@ -303,9 +320,7 @@ export default function Settings() {
             <label className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm font-medium text-slate-700">
               {option.id === 'notifications'
                 ? t('enableNotifications')
-                : option.id === 'appearance'
-                  ? t('useDarkMode')
-                  : t('useCompactConversations')}
+                : t('useDarkMode')}
               <input
                 type="checkbox"
                 checked={enabled}
