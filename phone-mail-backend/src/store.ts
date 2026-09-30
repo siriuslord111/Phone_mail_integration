@@ -11,11 +11,18 @@ export type User = {
   smsNotificationsEnabled: boolean;
 };
 
+export type Alias = {
+  id: string;
+  address: string;
+  userId: string;
+  createdAt: string;
+};
+
 export type OtpChallenge = {
   hash: string;
   expiresAt: number;
   attempts: number;
-  purpose: 'login' | 'register' | 'ivr-register' | 'demo-ivr-register';
+  purpose: 'login' | 'register' | 'password-reset' | 'ivr-register' | 'demo-ivr-register';
 };
 
 export type Message = {
@@ -37,6 +44,7 @@ export type Message = {
 };
 
 export const users: User[] = [];
+export const aliases: Alias[] = [];
 export const messages: Message[] = [];
 export const contactNicknames = new Map<string, string>();
 export const otpStore = new Map<string, OtpChallenge>();

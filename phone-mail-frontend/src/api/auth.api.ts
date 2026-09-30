@@ -14,10 +14,11 @@ export interface AuthOptions {
   registrationNumber: string;
   otpConfigured: boolean;
   ivrDemoEnabled: boolean;
+  ivrTrialMode: boolean;
 }
 
 export async function getAuthOptions(): Promise<AuthOptions> {
-  if (DEMO_MODE) return { registrationNumber: '', otpConfigured: false, ivrDemoEnabled: false };
+  if (DEMO_MODE) return { registrationNumber: '', otpConfigured: false, ivrDemoEnabled: false, ivrTrialMode: false };
   const { data } = await api.get('/auth/options');
   return data;
 }
@@ -165,4 +166,17 @@ export async function changePassword(currentPassword: string, newPassword: strin
     return;
   }
   await api.post('/auth/change-password', { currentPassword, newPassword });
+}
+
+export async function sendPasswordResetOtp(): Promise<void> {
+  if (DEMO_MODE) throw new Error('Password reset OTP requires a configured backend.');
+  await api.post('/auth/send-password-reset-otp');
+}
+
+export async function resetPasswordWithOtp(otp: string, newPassword: string): Promise<void> {
+  if (newPassword.length < 8 || newPassword.length > 128) {
+    throw new Error('Password must be between 8 and 128 characters.');
+  }
+  if (DEMO_MODE) throw new Error('Password reset OTP requires a configured backend.');
+  await api.post('/auth/reset-password', { otp, newPassword });
 }

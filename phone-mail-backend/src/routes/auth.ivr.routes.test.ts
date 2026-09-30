@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto';
 import { after, before, test } from 'node:test';
 
 import type { Express } from 'express';
+import { TwilioService } from '../services/twilio.service';
 
 process.env.PHONEMAIL_STORAGE_MODE = 'memory';
 process.env.AUTH_TOKEN_SECRET = 'phone-mail-ivr-tests-auth-secret-32-bytes';
@@ -69,6 +70,7 @@ test('public auth options expose the call registration number and OTP availabili
     registrationNumber: '+18005550100',
     otpConfigured: false,
     ivrDemoEnabled: true,
+    ivrTrialMode: false,
   });
 });
 
@@ -229,6 +231,72 @@ test('voice registration cannot create an account without a valid OTP challenge'
   assert.equal(response.status, 200);
   assert.match(await response.text(), /incorrect or expired/);
   assert.equal(users.some((user) => user.phoneNumber === phone), false);
+});
+
+test('trial voice registration creates an account immediately after pressing 1', async () => {
+  const originalTrialMode = env.twilioTrialMode;
+  const phone = '+14155550104';
+  env.twilioTrialMode = true;
+
+  try {
+    const url = `${WEBHOOK_BASE_URL}/ivr/start-registration`;
+    const params = {
+      CallSid: 'CA-trial-create-on-one',
+      From: phone,
+      To: '+18005550100',
+      Digits: '1',
+    };
+    const response = await fetch(`${baseUrl}/api/auth/ivr/start-registration`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'x-twilio-signature': signature(url, params),
+      },
+      body: formBody(params),
+    });
+
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /Your PhoneMail account has been created/);
+    assert.equal(users.find((user) => user.phoneNumber === phone)?.passwordHash, undefined);
+  } finally {
+    env.twilioTrialMode = originalTrialMode;
+  }
+});
+
+test('voice registration delivers the OTP through a separate outbound call', async () => {
+  const phone = '+14155550103';
+  const delivered: Array<{ phone: string; callbackUrl: string }> = [];
+  const originalSendVoiceOtp = TwilioService.sendVoiceOtp;
+  TwilioService.sendVoiceOtp = async (toPhone, callbackUrl) => {
+    delivered.push({ phone: toPhone, callbackUrl });
+    return true;
+  };
+
+  try {
+    const url = `${WEBHOOK_BASE_URL}/ivr/start-registration`;
+    const params = {
+      CallSid: 'CA-test-call-voice-otp',
+      From: phone,
+      To: '+18005550100',
+      Digits: '1',
+    };
+    const response = await fetch(`${baseUrl}/api/auth/ivr/start-registration`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'x-twilio-signature': signature(url, params),
+      },
+      body: formBody(params),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(delivered.length, 1);
+    assert.equal(delivered[0].phone, phone);
+    assert.match(delivered[0].callbackUrl, /\/ivr\/otp-call\?token=[a-f0-9]{64}$/);
+    assert.match(await response.text(), /numDigits="6"/);
+  } finally {
+    TwilioService.sendVoiceOtp = originalSendVoiceOtp;
+  }
 });
 
 test('voice registration creates a passwordless account only after matching its OTP', async () => {

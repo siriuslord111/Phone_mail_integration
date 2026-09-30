@@ -28,7 +28,18 @@ model User {
   groupMemberships     GroupChatMember[]
   sentGroupMessages    GroupChatMessage[]
   deletedGroupMessages GroupChatMessageDeletion[]
+  aliases              Alias[]
   createdAt            DateTime                   @default(now())
+}
+
+model Alias {
+  id        String   @id @default(uuid())
+  address   String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model ContactNickname {

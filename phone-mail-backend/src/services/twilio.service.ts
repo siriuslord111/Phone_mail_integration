@@ -61,6 +61,44 @@ export class TwilioService {
     return response.toString();
   }
 
+  static voiceOtpTwiml(otp: string) {
+    const response = new twilio.twiml.VoiceResponse();
+    response.say(`Your PhoneMail verification code is ${otp}. Enter this six digit code in your first call.`);
+    response.hangup();
+    return response.toString();
+  }
+
+  static async sendVoiceOtp(toPhone: string, callbackUrl: string) {
+    const client = /^AC[a-zA-Z0-9]+$/.test(env.twilioAccountSid)
+      && env.twilioAuthToken
+      ? twilio(env.twilioAccountSid, env.twilioAuthToken)
+      : null;
+    const fromPhone = env.twilioTrialMode ? env.twilioTrialPhoneNumber : env.twilioPhoneNumber;
+    if (!client || !fromPhone || fromPhone === '+15005550006') {
+      console.warn('IVR OTP call was not sent because Twilio voice is not configured.');
+      return false;
+    }
+
+    try {
+      await client.calls.create({
+        to: toPhone,
+        from: fromPhone,
+        url: callbackUrl,
+      });
+      return true;
+    } catch (error) {
+      const providerError = error && typeof error === 'object'
+        ? error as { code?: unknown; status?: unknown; message?: unknown }
+        : {};
+      console.warn('IVR OTP call failed via Twilio.', {
+        code: typeof providerError.code === 'number' ? providerError.code : undefined,
+        status: typeof providerError.status === 'number' ? providerError.status : undefined,
+        message: typeof providerError.message === 'string' ? providerError.message : undefined,
+      });
+      return false;
+    }
+  }
+
   static sayIvrMessage(message: 'invalid' | 'alreadyRegistered' | 'otpUnavailable' | 'otpInvalid' | 'created') {
     const messages = {
       invalid: 'We could not verify your phone number. Please call again from a valid mobile number.',

@@ -1,39 +1,95 @@
 import { Router } from 'express';
 
 import { requireAuth } from '../middlewares/auth';
-import { updateSmsNotificationsEnabled } from '../services/account.service';
+import {
+  AliasAlreadyExistsError,
+  AliasNotFoundError,
+  createAccountAlias,
+  deleteAccountAlias,
+  listAccountAliases,
+  updateSmsNotificationsEnabled,
+} from '../services/account.service';
 
 const router = Router();
 router.use(requireAuth);
 
-router.get('/profile', (_req, res) => {
+router.get('/profile', async (_req, res, next) => {
   const user = res.locals.authenticatedUser;
-
-  return res.json({
-    success: true,
-    profile: {
-      id: user.id,
-      phoneNumber: user.phoneNumber,
-      email: user.email,
-      aliasIds: ['sales@phonemail.com', 'family@phonemail.com'],
-      language: 'en',
-      personalDetails: {
-        name: 'PhoneMail User',
+  try {
+    const aliases = await listAccountAliases(user);
+    return res.json({
+      success: true,
+      profile: {
+        id: user.id,
+        phoneNumber: user.phoneNumber,
+        email: user.email,
+        aliasIds: aliases.map((alias) => alias.address),
+        language: 'en',
+        personalDetails: {
+          name: 'PhoneMail User',
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    return next(error);
+  }
 });
 
-router.get('/aliases', (req, res) => {
+router.get('/aliases', async (req, res, next) => {
   const user = res.locals.authenticatedUser;
+  try {
+    const aliases = await listAccountAliases(user);
+    return res.json({
+      success: true,
+      primaryAddress: user.email,
+      aliases: aliases.map(({ id, address, createdAt }) => ({ id, address, createdAt })),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
 
-  return res.json({
-    success: true,
-    aliases: [
-      { id: 'alias-1', address: `${user.phoneNumber.replace(/\D/g, '')}@phonemail.com` },
-      { id: 'alias-2', address: `${user.phoneNumber.replace(/\D/g, '')}-updates@phonemail.com` },
-    ],
-  });
+function normalizeAliasAddress(value: unknown) {
+  const input = String(value ?? '').trim().toLowerCase();
+  const address = input.includes('@') ? input : `${input}@phonemail.com`;
+  if (!/^[a-z0-9](?:[a-z0-9._-]{1,28}[a-z0-9])?@phonemail\.com$/.test(address)) return null;
+  return address;
+}
+
+router.post('/aliases', async (req, res, next) => {
+  const address = normalizeAliasAddress(req.body?.address ?? req.body?.alias);
+  if (!address) {
+    return res.status(400).json({
+      success: false,
+      message: 'Alias must use 3-30 lowercase letters, numbers, dots, hyphens, or underscores and end with @phonemail.com.',
+    });
+  }
+
+  const user = res.locals.authenticatedUser;
+  if (address === user.email.toLowerCase()) {
+    return res.status(409).json({ success: false, message: 'That is already your primary address.' });
+  }
+  try {
+    const alias = await createAccountAlias(user, address);
+    return res.status(201).json({ success: true, alias });
+  } catch (error) {
+    if (error instanceof AliasAlreadyExistsError) {
+      return res.status(409).json({ success: false, message: 'That alias is already in use.' });
+    }
+    return next(error);
+  }
+});
+
+router.delete('/aliases/:aliasId', async (req, res, next) => {
+  try {
+    await deleteAccountAlias(res.locals.authenticatedUser, req.params.aliasId);
+    return res.json({ success: true, message: 'Alias removed.' });
+  } catch (error) {
+    if (error instanceof AliasNotFoundError) {
+      return res.status(404).json({ success: false, message: 'Alias not found.' });
+    }
+    return next(error);
+  }
 });
 
 router.get('/preferences', (_req, res) => {

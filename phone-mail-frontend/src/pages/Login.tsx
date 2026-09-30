@@ -263,6 +263,7 @@ export default function Login() {
       </div>
       {mode === 'register' && (
         <div className="mt-3 rounded-xl bg-blue-50 px-3 py-2.5 text-xs leading-relaxed text-blue-800">
+          {method === 'otp' && !authOptions?.ivrTrialMode && <p className="mb-2 font-semibold">{t('phoneOtpRegistrationCallOnly')}</p>}
           {authOptionsError ? (
             <p role="alert">{authOptionsError}</p>
           ) : !authOptions ? (
@@ -301,6 +302,11 @@ export default function Login() {
               )}
               <p className="text-[11px]">{t('localDemoOnly')}</p>
             </div>
+          ) : authOptions.ivrTrialMode ? (
+            <p>
+              {t('trialVoiceRegistration')}{' '}
+              {authOptions.registrationNumber && <a className="font-semibold underline" href={`tel:${authOptions.registrationNumber}`}>{authOptions.registrationNumber}</a>}
+            </p>
           ) : authOptions.registrationNumber ? (
             authOptions.otpConfigured ? (
               <p>
@@ -363,13 +369,15 @@ export default function Login() {
           {t('usedAsAddress')}
         </p>
       )}
-      <div className="mt-auto pt-6">
-        <Button fullWidth size="lg" loading={loading} onClick={handleSubmit} className="justify-center">
-          {method === 'otp' || (method === 'password' && mode === 'register')
-            ? otpSent ? t('verifyAndContinue') : t('sendOtp')
-            : mode === 'register' ? t('createAccountButton') : t('logIn')}
-        </Button>
-      </div>
+      {!(mode === 'register' && method === 'otp') && (
+        <div className="mt-auto pt-6">
+          <Button fullWidth size="lg" loading={loading} onClick={handleSubmit} className="justify-center">
+            {method === 'otp' || (method === 'password' && mode === 'register')
+              ? otpSent ? t('verifyAndContinue') : t('sendOtp')
+              : mode === 'register' ? t('createAccountButton') : t('logIn')}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

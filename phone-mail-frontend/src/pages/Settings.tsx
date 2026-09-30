@@ -7,14 +7,15 @@ import {
   KeyRound,
   Palette,
   ShieldCheck,
+  AtSign,
   UserRound,
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { useLanguage } from '../context/LanguageProvider';
-import { changePassword } from '../api/auth.api';
-import { getSmsNotificationsEnabled, setSmsNotificationsEnabled } from '../api/user.api';
+import { changePassword, resetPasswordWithOtp, sendPasswordResetOtp } from '../api/auth.api';
+import { addAlias, getAliases, getSmsNotificationsEnabled, removeAlias, setSmsNotificationsEnabled, type AccountAlias } from '../api/user.api';
 import { getErrorMessage } from '../api/axios';
 import { isLanguageCode, LANGUAGES, type TranslationKey } from '../utils/i18n';
 import { applyDarkMode } from '../utils/theme';
@@ -64,6 +65,13 @@ const OPTIONS: SettingsOption[] = [
     icon: ShieldCheck,
   },
   {
+    id: 'aliases',
+    title: 'aliasIds',
+    description: 'aliasDescription',
+    detail: 'aliasDetail',
+    icon: AtSign,
+  },
+  {
     id: 'language',
     title: 'language',
     description: 'languageDescription',
@@ -108,6 +116,18 @@ export default function Settings() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordStatus, setPasswordStatus] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
+  const [resetOtp, setResetOtp] = useState('');
+  const [resetOtpSent, setResetOtpSent] = useState(false);
+  const [sendingResetOtp, setSendingResetOtp] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [aliases, setAliases] = useState<AccountAlias[]>([]);
+  const [primaryAddress, setPrimaryAddress] = useState('');
+  const [aliasInput, setAliasInput] = useState('');
+  const [aliasLoading, setAliasLoading] = useState(false);
+  const [aliasSaving, setAliasSaving] = useState(false);
+  const [aliasError, setAliasError] = useState('');
+  const [aliasStatus, setAliasStatus] = useState('');
 
   const handlePreferenceChange = async (value: boolean) => {
     if (!option) return;
@@ -162,6 +182,57 @@ export default function Settings() {
     }
   };
 
+  const handleSendPasswordResetOtp = async () => {
+    setPasswordError('');
+    setPasswordStatus('');
+    setSendingResetOtp(true);
+    try {
+      await sendPasswordResetOtp();
+      setResetOtpSent(true);
+      setPasswordStatus(t('resetOtpSent'));
+    } catch (error) {
+      setPasswordError(getErrorMessage(error, t('passwordResetFailed')));
+    } finally {
+      setSendingResetOtp(false);
+    }
+  };
+
+  const handlePasswordReset = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError('');
+    setPasswordStatus('');
+    if (!resetOtpSent) {
+      setPasswordError(t('sendResetOtpFirst'));
+      return;
+    }
+    if (!/^\d{6}$/.test(resetOtp)) {
+      setPasswordError(t('otpOnly'));
+      return;
+    }
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      setPasswordError(t('passwordLength'));
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError(t('passwordMismatch'));
+      return;
+    }
+    setResettingPassword(true);
+    try {
+      await resetPasswordWithOtp(resetOtp, newPassword);
+      setResetOtp('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setResetMode(false);
+      setResetOtpSent(false);
+      setPasswordStatus(t('passwordResetSuccess'));
+    } catch (error) {
+      setPasswordError(getErrorMessage(error, t('passwordResetFailed')));
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
   useEffect(() => {
     if (!section) return;
     const goBackOnEscape = (event: KeyboardEvent) => {
@@ -201,6 +272,55 @@ export default function Settings() {
     return () => { active = false; };
   }, [option, t]);
 
+  useEffect(() => {
+    if (!option || option.id !== 'aliases') return;
+    let active = true;
+    setAliasLoading(true);
+    setAliasError('');
+    void getAliases()
+      .then((result) => {
+        if (!active) return;
+        setPrimaryAddress(result.primaryAddress);
+        setAliases(result.aliases);
+      })
+      .catch((error: unknown) => {
+        if (active) setAliasError(getErrorMessage(error, t('aliasSaveFailed')));
+      })
+      .finally(() => {
+        if (active) setAliasLoading(false);
+      });
+    return () => { active = false; };
+  }, [option, t]);
+
+  const handleAddAlias = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAliasError('');
+    setAliasStatus('');
+    setAliasSaving(true);
+    try {
+      const alias = await addAlias(aliasInput);
+      setAliases((current) => [...current, alias]);
+      setAliasInput('');
+      setAliasStatus(t('aliasAdded'));
+    } catch (error) {
+      setAliasError(getErrorMessage(error, t('aliasSaveFailed')));
+    } finally {
+      setAliasSaving(false);
+    }
+  };
+
+  const handleRemoveAlias = async (aliasId: string) => {
+    setAliasError('');
+    setAliasStatus('');
+    try {
+      await removeAlias(aliasId);
+      setAliases((current) => current.filter((alias) => alias.id !== aliasId));
+      setAliasStatus(t('aliasRemoved'));
+    } catch (error) {
+      setAliasError(getErrorMessage(error, t('aliasRemoveFailed')));
+    }
+  };
+
   if (section) {
     if (!option) {
       return (
@@ -230,6 +350,48 @@ export default function Settings() {
             </div>
           </div>
           <p className="mt-5 text-sm leading-6 text-slate-600">{t(option.detail)}</p>
+          {option.id === 'aliases' && (
+            <div className="mt-5 space-y-4 border-t border-slate-100 pt-4">
+              <p className="text-sm text-slate-600">
+                <span className="font-medium text-slate-800">{t('primaryAddress')}:</span>{' '}
+                {primaryAddress || t('loading')}
+              </p>
+              <form onSubmit={(event) => { void handleAddAlias(event); }} className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={aliasInput}
+                  onChange={(event) => setAliasInput(event.target.value)}
+                  placeholder={t('aliasPlaceholder')}
+                  aria-label={t('addAlias')}
+                  maxLength={30}
+                  required
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#1a66ff]"
+                />
+                <button
+                  type="submit"
+                  disabled={aliasSaving || aliasLoading}
+                  className="rounded-xl bg-[#1a66ff] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b4fe0] disabled:opacity-60"
+                >
+                  {aliasSaving ? t('saving') : t('addAlias')}
+                </button>
+              </form>
+              <p className="text-xs text-slate-500">{t('aliasFormat')}</p>
+              {aliases.length === 0 && !aliasLoading && <p className="text-sm text-slate-500">{t('noAliases')}</p>}
+              {aliases.map((alias) => (
+                <div key={alias.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+                  <span className="break-all text-sm text-slate-700">{alias.address}</span>
+                  <button
+                    type="button"
+                    onClick={() => { void handleRemoveAlias(alias.id); }}
+                    className="shrink-0 text-sm font-medium text-rose-600 hover:underline"
+                  >
+                    {t('removeAlias')}
+                  </button>
+                </div>
+              ))}
+              {aliasError && <p role="alert" className="text-sm text-rose-600">{aliasError}</p>}
+              {aliasStatus && <p role="status" className="text-sm text-emerald-700">{aliasStatus}</p>}
+            </div>
+          )}
           {option.id === 'security' && (
             <div className="mt-5 border-t border-slate-100 pt-4">
               <h2 className="text-sm font-semibold text-slate-800">{t('webSecurity')}</h2>
@@ -251,7 +413,7 @@ export default function Settings() {
               ))}
             </ol>
           )}
-          {option.id === 'password' && (
+          {option.id === 'password' && !resetMode && (
             <form onSubmit={(event) => { void handlePasswordChange(event); }} className="mt-5 space-y-4 border-t border-slate-100 pt-4">
               <label className="block text-sm font-medium text-slate-700">
                 {t('currentPassword')}
@@ -308,6 +470,97 @@ export default function Settings() {
                   {changingPassword ? t('saving') : t('changePassword')}
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  setResetMode(true);
+                  setPasswordError('');
+                  setPasswordStatus('');
+                }}
+                className="block text-sm font-medium text-[#1a66ff] hover:underline"
+              >
+                {t('forgotPassword')}
+              </button>
+            </form>
+          )}
+          {option.id === 'password' && resetMode && (
+            <form onSubmit={(event) => { void handlePasswordReset(event); }} className="mt-5 space-y-4 border-t border-slate-100 pt-4">
+              <p className="text-sm leading-6 text-slate-600">{t('forgotPasswordHelp')}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSendPasswordResetOtp();
+                }}
+                disabled={sendingResetOtp}
+                className="inline-flex items-center justify-center rounded-xl border border-[#1a66ff] px-4 py-2.5 text-sm font-semibold text-[#1a66ff] transition hover:bg-blue-50 disabled:opacity-60"
+              >
+                {sendingResetOtp ? t('saving') : t('sendResetOtp')}
+              </button>
+              {resetOtpSent && (
+                <label className="block text-sm font-medium text-slate-700">
+                  {t('resetOtp')}
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    required
+                    value={resetOtp}
+                    onChange={(event) => setResetOtp(event.target.value.replace(/\D/g, ''))}
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#1a66ff]"
+                  />
+                </label>
+              )}
+              <label className="block text-sm font-medium text-slate-700">
+                {t('newPassword')}
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={128}
+                  required
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#1a66ff]"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                {t('confirmNewPassword')}
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={128}
+                  required
+                  value={confirmNewPassword}
+                  onChange={(event) => setConfirmNewPassword(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#1a66ff]"
+                />
+              </label>
+              {passwordError && <p role="alert" className="text-sm text-rose-600">{passwordError}</p>}
+              {passwordStatus && <p role="status" className="text-sm text-emerald-700">{passwordStatus}</p>}
+              <div className="flex flex-wrap items-center gap-4">
+                <button
+                  type="submit"
+                  disabled={resettingPassword || !resetOtpSent}
+                  className="inline-flex items-center justify-center rounded-xl bg-[#1a66ff] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b4fe0] disabled:opacity-60"
+                >
+                  {resettingPassword ? t('saving') : t('resetPassword')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetMode(false);
+                    setResetOtp('');
+                    setResetOtpSent(false);
+                    setPasswordError('');
+                    setPasswordStatus('');
+                  }}
+                  className="text-sm font-medium text-slate-600 hover:underline"
+                >
+                  {t('backToPasswordChange')}
+                </button>
+              </div>
             </form>
           )}
           {option.id === 'language' && (

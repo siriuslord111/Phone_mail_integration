@@ -52,6 +52,21 @@ before(async () => {
 
 beforeEach(() => loginRateLimit.resetKey(testRateLimitKey));
 
+test('login OTP is not sent for an unregistered number', async () => {
+  const phone = `9${Math.floor(100_000_000 + Math.random() * 900_000_000)}`;
+  const response = await fetch(`${baseUrl}/api/auth/send-otp`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone, purpose: 'login' }),
+  });
+
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), {
+    success: false,
+    message: 'No account exists for this number. Register first or use the phone call registration option.',
+  });
+});
+
 after(async () => {
   if (!server) return;
   await new Promise<void>((resolve, reject) => {
