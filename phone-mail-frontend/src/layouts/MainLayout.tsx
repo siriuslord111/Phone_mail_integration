@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type TouchEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   FileText,
@@ -61,6 +61,7 @@ export default function MainLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const edgeTouchStart = useRef<{ x: number; y: number } | null>(null);
 
   // A chat thread open on mobile hides our header/FAB — Dashboard renders its own.
   const chatOpen = params.get('chat') !== null;
@@ -120,6 +121,22 @@ export default function MainLayout() {
   };
 
   const outletContext: LayoutContext = { search, setSearch };
+  const handleMobileTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (window.matchMedia('(min-width: 768px)').matches || drawerOpen) return;
+    const touch = event.touches[0];
+    edgeTouchStart.current = touch.clientX <= 24
+      ? { x: touch.clientX, y: touch.clientY }
+      : null;
+  };
+  const handleMobileTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const start = edgeTouchStart.current;
+    edgeTouchStart.current = null;
+    if (!start || window.matchMedia('(min-width: 768px)').matches) return;
+    const touch = event.changedTouches[0];
+    if (touch.clientX - start.x >= 72 && Math.abs(touch.clientY - start.y) < 48) {
+      setDrawerOpen(true);
+    }
+  };
 
   const linkClass = (collapsed: boolean) =>
     ({ isActive }: { isActive: boolean }) =>
@@ -132,7 +149,12 @@ export default function MainLayout() {
       );
 
   return (
-    <div className="flex h-dvh flex-col bg-[var(--app-background)] text-slate-900 md:bg-[var(--app-background-desktop)]">
+    <div
+      className="flex h-dvh flex-col bg-[var(--app-background)] text-slate-900 md:bg-[var(--app-background-desktop)]"
+      onTouchStart={handleMobileTouchStart}
+      onTouchEnd={handleMobileTouchEnd}
+      onTouchCancel={() => { edgeTouchStart.current = null; }}
+    >
       {/* ── Mobile header (WhatsApp-style) ─────────────────────────── */}
       {!chatOpen && (
         <header className="relative z-20 bg-gradient-to-br from-[#1a66ff] to-[#0b4fe0] px-4 pb-4 pt-[max(env(safe-area-inset-top),0.75rem)] text-white md:hidden">
@@ -142,16 +164,17 @@ export default function MainLayout() {
           </div>
 
           <div className="relative flex items-center justify-between">
-            <Link
-              to="/"
-              aria-label={t('inbox')}
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label={t('openMenu')}
               className="flex items-center gap-2.5 rounded-xl transition active:scale-95"
             >
               <span aria-hidden="true" className="brand-mark size-9 rounded-xl ring-1 ring-white/25" />
               <span className="font-serif text-xl font-bold tracking-tight">
                 Phone<span className="text-blue-200">Mail</span>
               </span>
-            </Link>
+            </button>
 
             <button
               onClick={() => setDrawerOpen(true)}
@@ -194,7 +217,9 @@ export default function MainLayout() {
             aria-label={t('inbox')}
             className="inline-flex items-center gap-2.5 rounded-xl transition active:scale-95"
           >
-            <span aria-hidden="true" className="brand-mark size-9 rounded-xl shadow-md shadow-blue-500/30" />
+            <span aria-hidden="true" className="desktop-brand-mark-frame size-9 rounded-xl shadow-md shadow-blue-500/30">
+              <span className="brand-mark size-full rounded-xl" />
+            </span>
             <span className="font-serif text-xl font-bold tracking-tight text-slate-900">
               Phone<span className="text-[#1a66ff]">Mail</span>
             </span>
@@ -357,11 +382,19 @@ export default function MainLayout() {
             >
               <X className="size-5" />
             </button>
-            <span className="relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[#0b3fbf] text-xl font-semibold ring-2 ring-white/60">
+            <button
+              type="button"
+              onClick={() => {
+                setDrawerOpen(false);
+                navigate('/profile');
+              }}
+              aria-label={t('profile')}
+              className="relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[#0b3fbf] text-xl font-semibold ring-2 ring-white/60 transition active:scale-95"
+            >
               {user?.avatarUrl
                 ? <img src={user.avatarUrl} alt="" className="size-full object-cover" />
                 : accountInitials}
-            </span>
+            </button>
             <p className="relative mt-3 truncate text-lg font-semibold">{name}</p>
             <p className="relative truncate text-sm text-blue-100">{email}</p>
           </div>

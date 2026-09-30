@@ -235,6 +235,16 @@ body {
   background-size: cover;
 }
 
+.desktop-brand-mark-frame {
+  display: block;
+  flex: none;
+}
+
+.dark .desktop-brand-mark-frame {
+  padding: 2px;
+  background: linear-gradient(135deg, #38bdf8, #2563eb 55%, #818cf8);
+}
+
 .dark .brand-mark {
   background-image: url('/phonemail-icon-navy.svg');
 }
